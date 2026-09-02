@@ -229,10 +229,11 @@ def test_per_event_ack_legacy_path_forwards_shared_token(monkeypatch):
     monkeypatch.setattr(lifecycle_notify, "ALERT_CENTER_PER_EVENT_ACK_ENABLED", True)
     monkeypatch.setattr(lifecycle_notify, "ALERT_CENTER_ACK_TOKEN", "receiver-secret")
     monkeypatch.setattr(notifier, "_build_instance_org_map", lambda alerts: {})
+    monkeypatch.setattr(notifier, "_build_instance_identity_map", lambda alerts: {})
     monkeypatch.setattr(
         lifecycle_notify.SystemMgmtUtils,
         "send_msg_with_channel",
-        lambda channel_id, title, content, receivers: sent.update(content=content)
+        lambda channel_id, title, content, receivers, **kwargs: sent.update(content=content)
         or {
             "result": True,
             "data": {

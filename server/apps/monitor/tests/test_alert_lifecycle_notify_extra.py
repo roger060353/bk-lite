@@ -188,18 +188,23 @@ class TestBuildInstanceOrgMap:
         assert n._build_instance_org_map([_alert(monitor_instance_id="")]) == {}
 
 
-@pytest.mark.django_db
 class TestBuildInstanceIdentityMap:
-    def test_maps_uuid_and_model_and_skips_numeric_cmdb_id(self):
-        from apps.monitor.models.monitor_object import MonitorInstance, MonitorObject
-
+    def test_maps_uuid_and_model_and_skips_numeric_cmdb_id(self, monkeypatch):
         inst_uuid = "63e4a531-b6bb-43cc-9eae-8eb8a09f795e"
-        mysql, _ = MonitorObject.objects.get_or_create(name="Mysql", defaults={"level": "base"})
-        host, _ = MonitorObject.objects.get_or_create(name="Host", defaults={"level": "base"})
-        unknown, _ = MonitorObject.objects.get_or_create(name="CustomObjIdentity", defaults={"level": "base"})
-        MonitorInstance.objects.create(id="mysql-1", name="db", monitor_object=mysql, cmdb_id=inst_uuid)
-        MonitorInstance.objects.create(id="host-legacy", name="h", monitor_object=host, cmdb_id="1704")
-        MonitorInstance.objects.create(id="unknown-1", name="u", monitor_object=unknown, cmdb_id=None)
+        rows = [
+            SimpleNamespace(id="mysql-1", cmdb_id=inst_uuid, monitor_object=SimpleNamespace(name="Mysql")),
+            SimpleNamespace(id="host-legacy", cmdb_id="1704", monitor_object=SimpleNamespace(name="Host")),
+            SimpleNamespace(id="unknown-1", cmdb_id=None, monitor_object=SimpleNamespace(name="CustomObjIdentity")),
+        ]
+
+        class FakeQuery:
+            def select_related(self, *args):
+                return rows
+
+        monkeypatch.setattr(
+            "apps.monitor.models.monitor_object.MonitorInstance.objects.filter",
+            lambda **kwargs: FakeQuery(),
+        )
         n = AlertLifecycleNotifier(None)
         identity_map = n._build_instance_identity_map(
             [
