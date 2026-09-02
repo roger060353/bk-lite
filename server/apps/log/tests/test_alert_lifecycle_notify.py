@@ -93,7 +93,7 @@ def test_build_created_event_uses_current_policy_and_log_event(alert_center_chan
     assert payload == {
         "external_id": alert.id,
         "rule_id": str(policy.id),
-        "title": "日志出现 error",
+        "title": "日志错误告警",
         "description": "日志出现 error",
         "level": "1",
         "value": None,
@@ -106,14 +106,21 @@ def test_build_created_event_uses_current_policy_and_log_event(alert_center_chan
         "resource_name": policy.name,
         "organizations": [2, 7],
         "tags": {},
+        "inst_uuid": "",
+        "model": "",
+        "original_labels": {},
         "labels": {
             "policy_name": policy.name,
             "alert_type": policy.alert_type,
             "collect_type_id": "",
             "log_alert_id": alert.id,
             "status": "new",
+            "inst_uuid": "",
+            "model": "",
+            "original_labels": {},
         },
     }
+    assert payload["title"] != payload["description"]
 
 
 def test_created_and_closed_events_use_same_alert_resource_identity(alert_center_channel):
@@ -128,6 +135,10 @@ def test_created_and_closed_events_use_same_alert_resource_identity(alert_center
 
     assert created["resource_id"] == "policy_1_host=h1"
     assert closed["resource_id"] == created["resource_id"]
+    assert created["original_labels"] == {"host": "h1"}
+    assert closed["original_labels"] == created["original_labels"]
+    assert created["title"] == "日志错误告警"
+    assert created["description"] == "日志出现 error"
 
 
 def test_build_closed_event_uses_stable_close_time_and_operator(alert_center_channel):
@@ -144,7 +155,7 @@ def test_build_closed_event_uses_stable_close_time_and_operator(alert_center_cha
     expected_time = str(int(closed_at.timestamp()))
     assert payload["external_id"] == alert.id
     assert payload["action"] == "closed"
-    assert payload["title"] == "日志出现 error"
+    assert payload["title"] == "日志错误告警"
     assert payload["value"] is None
     assert payload["item"] == ""
     assert payload["resource_type"] == ""

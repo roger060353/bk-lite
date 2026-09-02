@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.fields import empty
 
+from apps.alerts.common.instance_identity import LABEL_INST_UUID, LABEL_MODEL, LABEL_ORIGINAL_LABELS, extract_instance_identity
 from apps.alerts.constants import PERMISSION_ALERT
 from apps.alerts.constants.constants import AlertStatus, NotifyResultStatus
 from apps.alerts.models.models import Alert
@@ -44,6 +45,9 @@ class AlertModelSerializer(AuthSerializer):
     # 持续时间
     duration = serializers.SerializerMethodField()
     operator_user = serializers.SerializerMethodField()
+    inst_uuid = serializers.SerializerMethodField()
+    model = serializers.SerializerMethodField()
+    original_labels = serializers.SerializerMethodField()
 
     # 格式化时间字段
     created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
@@ -262,3 +266,15 @@ class AlertModelSerializer(AuthSerializer):
 
     def get_notify_records(self, obj):
         return self.alert_notify_records_map.get(obj.alert_id, [])
+
+    @staticmethod
+    def get_inst_uuid(obj):
+        return extract_instance_identity(obj)[LABEL_INST_UUID]
+
+    @staticmethod
+    def get_model(obj):
+        return extract_instance_identity(obj)[LABEL_MODEL]
+
+    @staticmethod
+    def get_original_labels(obj):
+        return extract_instance_identity(obj)[LABEL_ORIGINAL_LABELS]

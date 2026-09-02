@@ -1,6 +1,7 @@
 # -- coding: utf-8 --
 from rest_framework import serializers
 
+from apps.alerts.common.instance_identity import LABEL_INST_UUID, LABEL_MODEL, LABEL_ORIGINAL_LABELS, extract_instance_identity
 from apps.alerts.constants import PERMISSION_EVENT
 from apps.alerts.models.models import Event
 from apps.alerts.utils.permission_scope import get_authorized_group_ids, normalize_team_ids
@@ -18,6 +19,9 @@ class EventModelSerializer(AuthSerializer):
     start_time = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
     end_time = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
     source_name = serializers.SerializerMethodField()
+    inst_uuid = serializers.SerializerMethodField()
+    model = serializers.SerializerMethodField()
+    original_labels = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -52,3 +56,15 @@ class EventModelSerializer(AuthSerializer):
         """
         # 如果使用了注解（推荐）
         return obj.source.name
+
+    @staticmethod
+    def get_inst_uuid(obj):
+        return extract_instance_identity(obj)[LABEL_INST_UUID]
+
+    @staticmethod
+    def get_model(obj):
+        return extract_instance_identity(obj)[LABEL_MODEL]
+
+    @staticmethod
+    def get_original_labels(obj):
+        return extract_instance_identity(obj)[LABEL_ORIGINAL_LABELS]

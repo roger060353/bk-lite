@@ -12,11 +12,7 @@ import pydantic.root_model  # noqa
 import pytest
 
 from apps.monitor.services import alert_lifecycle_notify as lifecycle_notify
-from apps.monitor.services.alert_lifecycle_notify import (
-    ACTION_TO_ALERT_CENTER,
-    LEVEL_TO_ALERT_CENTER,
-    AlertLifecycleNotifier,
-)
+from apps.monitor.services.alert_lifecycle_notify import ACTION_TO_ALERT_CENTER, LEVEL_TO_ALERT_CENTER, AlertLifecycleNotifier
 
 pytestmark = pytest.mark.unit
 
@@ -117,18 +113,14 @@ class TestBuildContent:
     def test_开始时间按通知人时区转换为本地墙钟(self):
         notifier = AlertLifecycleNotifier(policy=None)
         alert = _alert(start_event_time=datetime(2026, 8, 13, 1, 24, 0, tzinfo=timezone.utc))
-        content = notifier._build_content(
-            alert, "created", "", "", target_timezone="Asia/Shanghai"
-        )
+        content = notifier._build_content(alert, "created", "", "", target_timezone="Asia/Shanghai")
         assert "开始时间：2026-08-13 09:24:00" in content
         assert "开始时间：2026-08-13 01:24:00" not in content
 
     def test_开始时间跟随通知人时区而不是写死上海(self):
         notifier = AlertLifecycleNotifier(policy=None)
         alert = _alert(start_event_time=datetime(2026, 8, 13, 1, 24, 0, tzinfo=timezone.utc))
-        content = notifier._build_content(
-            alert, "created", "", "", target_timezone="America/New_York"
-        )
+        content = notifier._build_content(alert, "created", "", "", target_timezone="America/New_York")
         assert "开始时间：2026-08-12 21:24:00" in content
 
 
@@ -188,20 +180,30 @@ class TestBuildAlertCenterPayload:
 
         assert payload["external_id"] == "alert-1"
         assert payload["rule_id"] == "7"
-        assert payload["title"] == "CPU 超阈值"
+        assert payload["title"] == "策略X"
+        assert payload["description"] == "CPU 超阈值"
+        assert payload["title"] != payload["description"]
         assert payload["level"] == LEVEL_TO_ALERT_CENTER["critical"] == "0"
         assert payload["action"] == ACTION_TO_ALERT_CENTER["recovered"] == "recovery"
         assert payload["value"] == 88.5
         assert payload["start_time"] == str(int(alert.start_event_time.timestamp()))
         assert payload["end_time"] == str(int(alert.end_event_time.timestamp()))
         assert payload["resource_id"] == "inst-1"
+        assert payload["resource_type"] == ""
         assert payload["resource_name"] == "主机A"
+        assert payload["inst_uuid"] == ""
+        assert payload["model"] == ""
+        assert payload["original_labels"] == {"k": "v"}
+        assert payload["tags"] == {"k": "v"}
         # 实例无组织映射 -> 回退策略组织
         assert payload["organizations"] == [1, 2]
         assert payload["labels"]["policy_name"] == "策略X"
         assert payload["labels"]["operator"] == "op"
         assert payload["labels"]["reason"] == "rsn"
         assert payload["labels"]["status"] == "active"
+        assert payload["labels"]["inst_uuid"] == ""
+        assert payload["labels"]["model"] == ""
+        assert payload["labels"]["original_labels"] == {"k": "v"}
 
     def test_未知动作默认created且value为None(self):
         notifier = AlertLifecycleNotifier(policy=None)
@@ -215,9 +217,7 @@ class TestBuildAlertCenterPayload:
         policy = SimpleNamespace(name="P", organizations=[99])
         notifier = AlertLifecycleNotifier(policy=policy)
         alert = _alert()
-        payload = notifier._build_alert_center_payload(
-            alert, "created", "", "", instance_org_map={"inst-1": [5, 6]}
-        )
+        payload = notifier._build_alert_center_payload(alert, "created", "", "", instance_org_map={"inst-1": [5, 6]})
         assert payload["organizations"] == [5, 6]
 
 

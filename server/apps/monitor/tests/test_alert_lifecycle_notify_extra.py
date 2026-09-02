@@ -4,16 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.monitor.services.alert_lifecycle_notify import (
-    NOTIFY_SCOPE_ALERT_CENTER_ONLY,
-    NOTIFY_SCOPE_ALL_CONFIGURED,
-    AlertLifecycleNotifier,
-)
+from apps.monitor.services.alert_lifecycle_notify import NOTIFY_SCOPE_ALERT_CENTER_ONLY, NOTIFY_SCOPE_ALL_CONFIGURED, AlertLifecycleNotifier
 
 
 def _alert(**kwargs):
     base = dict(
-        id="a1", notice_type_ids=[], notice_users=[], notice_logs=[],
+        id="a1",
+        notice_type_ids=[],
+        notice_users=[],
+        notice_logs=[],
         monitor_instance_id="('h1',)",
     )
     base.update(kwargs)
@@ -53,25 +52,31 @@ class TestResolveNoticeUsers:
 class TestHasSuccessfulCreatedNotice:
     def test_found(self):
         n = AlertLifecycleNotifier(None)
-        alert = _alert(notice_logs=[
-            {"action": "created", "channel_id": "c1", "success": True},
-        ])
+        alert = _alert(
+            notice_logs=[
+                {"action": "created", "channel_id": "c1", "success": True},
+            ]
+        )
         assert n._has_successful_created_notice(alert, "c1") is True
 
     def test_not_found_wrong_channel(self):
         n = AlertLifecycleNotifier(None)
-        alert = _alert(notice_logs=[
-            {"action": "created", "channel_id": "c2", "success": True},
-        ])
+        alert = _alert(
+            notice_logs=[
+                {"action": "created", "channel_id": "c2", "success": True},
+            ]
+        )
         assert n._has_successful_created_notice(alert, "c1") is False
 
     def test_ignores_failed_and_non_created(self):
         n = AlertLifecycleNotifier(None)
-        alert = _alert(notice_logs=[
-            {"action": "created", "channel_id": "c1", "success": False},
-            {"action": "closed", "channel_id": "c1", "success": True},
-            "bad-entry",
-        ])
+        alert = _alert(
+            notice_logs=[
+                {"action": "created", "channel_id": "c1", "success": False},
+                {"action": "closed", "channel_id": "c1", "success": True},
+                "bad-entry",
+            ]
+        )
         assert n._has_successful_created_notice(alert, "c1") is False
 
 
@@ -83,31 +88,60 @@ class TestShouldNotifyChannel:
 
     def test_alert_center_only_skips_non_ac(self):
         n = AlertLifecycleNotifier(_policy())
-        assert n._should_notify_channel(
-            _alert(), self._channel(is_ac=False), "c1", "recovered",
-            NOTIFY_SCOPE_ALERT_CENTER_ONLY,
-        ) is False
+        assert (
+            n._should_notify_channel(
+                _alert(),
+                self._channel(is_ac=False),
+                "c1",
+                "recovered",
+                NOTIFY_SCOPE_ALERT_CENTER_ONLY,
+            )
+            is False
+        )
 
     def test_notice_disabled_created_skipped(self):
         n = AlertLifecycleNotifier(_policy(notice=False))
-        assert n._should_notify_channel(
-            _alert(), self._channel(), "c1", "created", NOTIFY_SCOPE_ALL_CONFIGURED,
-        ) is False
+        assert (
+            n._should_notify_channel(
+                _alert(),
+                self._channel(),
+                "c1",
+                "created",
+                NOTIFY_SCOPE_ALL_CONFIGURED,
+            )
+            is False
+        )
 
     def test_notice_enabled_always_true(self):
         n = AlertLifecycleNotifier(_policy(notice=True))
-        assert n._should_notify_channel(
-            _alert(), self._channel(), "c1", "created", NOTIFY_SCOPE_ALL_CONFIGURED,
-        ) is True
+        assert (
+            n._should_notify_channel(
+                _alert(),
+                self._channel(),
+                "c1",
+                "created",
+                NOTIFY_SCOPE_ALL_CONFIGURED,
+            )
+            is True
+        )
 
     def test_recovered_requires_prior_created(self):
         n = AlertLifecycleNotifier(_policy(notice=False))
-        alert = _alert(notice_logs=[
-            {"action": "created", "channel_id": "c1", "success": True},
-        ])
-        assert n._should_notify_channel(
-            alert, self._channel(), "c1", "recovered", NOTIFY_SCOPE_ALL_CONFIGURED,
-        ) is True
+        alert = _alert(
+            notice_logs=[
+                {"action": "created", "channel_id": "c1", "success": True},
+            ]
+        )
+        assert (
+            n._should_notify_channel(
+                alert,
+                self._channel(),
+                "c1",
+                "recovered",
+                NOTIFY_SCOPE_ALL_CONFIGURED,
+            )
+            is True
+        )
 
 
 class TestIsAlertCenterChannel:
@@ -140,7 +174,7 @@ class TestResolveAlertOrganizations:
 class TestBuildInstanceOrgMap:
     def test_maps_instances_to_orgs(self):
         from apps.monitor.models import MonitorInstanceOrganization
-        from apps.monitor.models.monitor_object import MonitorObject, MonitorInstance
+        from apps.monitor.models.monitor_object import MonitorInstance, MonitorObject
 
         obj = MonitorObject.objects.create(name="ALNObj", level="base")
         inst = MonitorInstance.objects.create(id="('h1',)", name="h1", monitor_object=obj)
@@ -154,14 +188,51 @@ class TestBuildInstanceOrgMap:
         assert n._build_instance_org_map([_alert(monitor_instance_id="")]) == {}
 
 
+@pytest.mark.django_db
+class TestBuildInstanceIdentityMap:
+    def test_maps_uuid_and_model_and_skips_numeric_cmdb_id(self):
+        from apps.monitor.models.monitor_object import MonitorInstance, MonitorObject
+
+        inst_uuid = "63e4a531-b6bb-43cc-9eae-8eb8a09f795e"
+        mysql, _ = MonitorObject.objects.get_or_create(name="Mysql", defaults={"level": "base"})
+        host, _ = MonitorObject.objects.get_or_create(name="Host", defaults={"level": "base"})
+        unknown, _ = MonitorObject.objects.get_or_create(name="CustomObjIdentity", defaults={"level": "base"})
+        MonitorInstance.objects.create(id="mysql-1", name="db", monitor_object=mysql, cmdb_id=inst_uuid)
+        MonitorInstance.objects.create(id="host-legacy", name="h", monitor_object=host, cmdb_id="1704")
+        MonitorInstance.objects.create(id="unknown-1", name="u", monitor_object=unknown, cmdb_id=None)
+        n = AlertLifecycleNotifier(None)
+        identity_map = n._build_instance_identity_map(
+            [
+                _alert(monitor_instance_id="mysql-1"),
+                _alert(monitor_instance_id="host-legacy"),
+                _alert(monitor_instance_id="unknown-1"),
+            ]
+        )
+        assert identity_map["mysql-1"] == {"inst_uuid": inst_uuid, "model": "mysql"}
+        assert identity_map["host-legacy"] == {"inst_uuid": "", "model": "host"}
+        assert identity_map["unknown-1"] == {"inst_uuid": "", "model": ""}
+
+    def test_empty_alerts(self):
+        n = AlertLifecycleNotifier(None)
+        assert n._build_instance_identity_map([_alert(monitor_instance_id="")]) == {}
+
+
 class TestBuildAlertCenterPayload:
     def test_payload_shape(self):
         from datetime import datetime, timezone
+
         n = AlertLifecycleNotifier(_policy(name="策略A", organizations=[3]))
         alert = _alert(
-            id="al-1", policy_id=7, content="CPU高", level="critical", value=90.0,
-            status="new", start_event_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            end_event_time=None, dimensions={"k": "v"}, monitor_instance_name="主机1",
+            id="al-1",
+            policy_id=7,
+            content="CPU高",
+            level="critical",
+            value=90.0,
+            status="new",
+            start_event_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            end_event_time=None,
+            dimensions={"k": "v"},
+            monitor_instance_name="主机1",
             metric_instance_id="m1",
         )
         payload = n._build_alert_center_payload(alert, "created", "sys", "auto", {"('h1',)": [3]})

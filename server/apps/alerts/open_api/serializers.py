@@ -1,5 +1,6 @@
 from django.utils import timezone
 
+from apps.alerts.common.instance_identity import LABEL_INST_UUID, LABEL_MODEL, LABEL_ORIGINAL_LABELS, extract_instance_identity
 from apps.alerts.open_api.errors import AlertsOpenAPIError
 from apps.alerts.serializers.alert import AlertModelSerializer
 
@@ -84,6 +85,10 @@ def serialize_alert(alert, *, detail: bool = False) -> dict:
         "event_count": _get_event_count(alert),
         "duration": AlertModelSerializer.get_duration(alert),
     }
+    identity = extract_instance_identity(alert)
+    data[LABEL_INST_UUID] = identity[LABEL_INST_UUID]
+    data[LABEL_MODEL] = identity[LABEL_MODEL]
+    data[LABEL_ORIGINAL_LABELS] = identity[LABEL_ORIGINAL_LABELS]
     if detail:
         data["labels"] = alert.labels or {}
         data["enrichment"] = alert.enrichment or {}
@@ -105,6 +110,7 @@ def _get_event_source_name(event) -> str:
 
 
 def serialize_event(event) -> dict:
+    identity = extract_instance_identity(event)
     return {
         "event_id": event.event_id,
         "title": event.title,
@@ -122,6 +128,9 @@ def serialize_event(event) -> dict:
         "start_time": _format_datetime(event.start_time),
         "end_time": _format_datetime(event.end_time),
         "received_at": _format_datetime(event.received_at),
+        LABEL_INST_UUID: identity[LABEL_INST_UUID],
+        LABEL_MODEL: identity[LABEL_MODEL],
+        LABEL_ORIGINAL_LABELS: identity[LABEL_ORIGINAL_LABELS],
     }
 
 

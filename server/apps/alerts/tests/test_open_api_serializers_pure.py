@@ -74,12 +74,17 @@ def test_serialize_alert_hides_db_id_and_events():
     assert listed["alert_id"] == "ALERT-1"
     assert listed["event_count"] == 3
     assert listed["closed_at"] is None
+    assert listed["inst_uuid"] == ""
+    assert listed["model"] == "host"
+    assert listed["original_labels"] == {}
     assert "id" not in listed
     assert "events" not in listed
     assert "labels" not in listed
     detailed = serialize_alert(alert, detail=True)
     assert detailed["labels"] == {"k": "v"}
     assert detailed["enrichment"] == {"e": 1}
+    assert detailed["inst_uuid"] == ""
+    assert detailed["model"] == "host"
 
 
 def test_serialize_event_exposes_source_name():
@@ -105,6 +110,9 @@ def test_serialize_event_exposes_source_name():
     assert payload["source"] == 5
     assert payload["source_name"] == "prometheus"
     assert payload["end_time"] is None
+    assert payload["inst_uuid"] == ""
+    assert payload["model"] == "host"
+    assert payload["original_labels"] == {}
 
 
 def test_serialize_event_source_name_empty_without_source():

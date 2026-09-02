@@ -13,17 +13,16 @@ from django.utils import timezone as django_timezone
 import apps.node_mgmt.models  # noqa: F401
 from apps.monitor.models import MonitorAlert, MonitorAlertCenterDelivery
 from apps.monitor.services.alert_center_delivery import (
+    _ack_result,
     _env_flag,
     _outbox_enabled,
-    _ack_result,
     backfill_legacy_alerts,
     deliver_alert_center_delivery,
     enqueue_alert_center_deliveries,
 )
-from apps.monitor.tasks import monitor_policy as monitor_policy_tasks
 from apps.monitor.services.alert_lifecycle_notify import AlertLifecycleNotifier
+from apps.monitor.tasks import monitor_policy as monitor_policy_tasks
 from apps.system_mgmt.models import Channel
-
 
 pytestmark = [pytest.mark.integration, pytest.mark.django_db(transaction=True)]
 
@@ -43,9 +42,7 @@ def alert_center_channel():
 def public_alert_center_capability(monkeypatch):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.SystemMgmtUtils.probe_notification_channel",
-        lambda channel_id, capability_only=False: {
-            "delivery_mode": "alert_event_copy"
-        },
+        lambda channel_id, capability_only=False: {"delivery_mode": "alert_event_copy"},
     )
 
 
@@ -91,9 +88,7 @@ def test_outbox_rollback_keeps_legacy_created_retry_enabled(monkeypatch):
     ) == ["new", "recovered", "closed"]
 
 
-def test_legacy_retry_uses_each_alert_selected_alert_center_channel(
-    alert_center_channel, mocker
-):
+def test_legacy_retry_uses_each_alert_selected_alert_center_channel(alert_center_channel, mocker):
     second_channel = Channel.objects.create(
         name="告警中心二",
         channel_type="nats",
@@ -106,14 +101,10 @@ def test_legacy_retry_uses_each_alert_selected_alert_center_channel(
     push = mocker.patch.object(
         AlertLifecycleNotifier,
         "_push_to_alert_center",
-        side_effect=lambda channel_id, channel_name, alerts, *args: [
-            (alert, {"success": True, "channel_id": channel_id}) for alert in alerts
-        ],
+        side_effect=lambda channel_id, channel_name, alerts, *args: [(alert, {"success": True, "channel_id": channel_id}) for alert in alerts],
     )
 
-    results = AlertLifecycleNotifier().push_to_alert_center_only(
-        [first, second], "created"
-    )
+    results = AlertLifecycleNotifier().push_to_alert_center_only([first, second], "created")
 
     assert {(call.args[0], call.args[2][0].id) for call in push.call_args_list} == {
         (alert_center_channel.id, first.id),
@@ -122,9 +113,7 @@ def test_legacy_retry_uses_each_alert_selected_alert_center_channel(
     assert all(success for _, success in results)
 
 
-def test_legacy_retry_requires_all_selected_alert_center_channels_to_succeed(
-    alert_center_channel, mocker
-):
+def test_legacy_retry_requires_all_selected_alert_center_channels_to_succeed(alert_center_channel, mocker):
     second_channel = Channel.objects.create(
         name="告警中心二",
         channel_type="nats",
@@ -151,28 +140,20 @@ def test_legacy_retry_requires_all_selected_alert_center_channels_to_succeed(
         ],
     )
 
-    assert AlertLifecycleNotifier().push_to_alert_center_only(
-        [alert], "created"
-    ) == [(alert, False)]
+    assert AlertLifecycleNotifier().push_to_alert_center_only([alert], "created") == [(alert, False)]
 
 
-def test_legacy_retry_channel_capability_failure_stays_retryable(
-    alert_center_channel, monkeypatch
-):
+def test_legacy_retry_channel_capability_failure_stays_retryable(alert_center_channel, monkeypatch):
     alert = _alert(alert_center_channel)
     monkeypatch.setattr(
         "apps.monitor.services.alert_lifecycle_notify.SystemMgmtUtils.probe_notification_channel",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("rpc unavailable")),
     )
 
-    assert AlertLifecycleNotifier().push_to_alert_center_only(
-        [alert], "created"
-    ) == [(alert, False)]
+    assert AlertLifecycleNotifier().push_to_alert_center_only([alert], "created") == [(alert, False)]
 
 
-def test_immediate_delivery_requires_all_alert_center_channels_to_succeed(
-    alert_center_channel, mocker
-):
+def test_immediate_delivery_requires_all_alert_center_channels_to_succeed(alert_center_channel, mocker):
     second_channel = Channel.objects.create(
         name="告警中心二",
         channel_type="nats",
@@ -208,9 +189,7 @@ def test_immediate_delivery_requires_all_alert_center_channels_to_succeed(
     assert alert.alert_center_notified is False
 
 
-def test_shadow_legacy_and_outbox_share_lifecycle_identity(
-    alert_center_channel, monkeypatch, mocker
-):
+def test_shadow_legacy_and_outbox_share_lifecycle_identity(alert_center_channel, monkeypatch, mocker):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         True,
@@ -223,9 +202,7 @@ def test_shadow_legacy_and_outbox_share_lifecycle_identity(
         "apps.monitor.services.alert_lifecycle_notify.ALERT_CENTER_ACK_TOKEN",
         "receiver-secret",
     )
-    schedule = mocker.patch(
-        "apps.monitor.services.alert_center_delivery._schedule_deliveries"
-    )
+    schedule = mocker.patch("apps.monitor.services.alert_center_delivery._schedule_deliveries")
     send = mocker.patch(
         "apps.monitor.services.alert_lifecycle_notify.SystemMgmtUtils.send_msg_with_channel",
         return_value={"result": True, "data": {}},
@@ -252,9 +229,7 @@ def test_shadow_legacy_and_outbox_share_lifecycle_identity(
     schedule.assert_not_called()
 
 
-def test_disabled_rollout_preserves_legacy_nats_payload(
-    alert_center_channel, monkeypatch, mocker
-):
+def test_disabled_rollout_preserves_legacy_nats_payload(alert_center_channel, monkeypatch, mocker):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         False,
@@ -287,9 +262,7 @@ def test_disabled_rollout_preserves_legacy_nats_payload(
     assert "delivery_id" not in event
 
 
-def test_delivery_switch_without_outbox_keeps_legacy_send(
-    alert_center_channel, monkeypatch, mocker
-):
+def test_delivery_switch_without_outbox_keeps_legacy_send(alert_center_channel, monkeypatch, mocker):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         False,
@@ -319,9 +292,7 @@ def test_delivery_switch_without_outbox_keeps_legacy_send(
     send.assert_called_once()
 
 
-def test_active_outbox_does_not_double_send_legacy_path(
-    alert_center_channel, monkeypatch, mocker
-):
+def test_active_outbox_does_not_double_send_legacy_path(alert_center_channel, monkeypatch, mocker):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         True,
@@ -334,9 +305,7 @@ def test_active_outbox_does_not_double_send_legacy_path(
         "apps.monitor.services.alert_center_delivery._schedule_deliveries",
         lambda ids: None,
     )
-    send = mocker.patch(
-        "apps.monitor.services.alert_lifecycle_notify.SystemMgmtUtils.send_msg_with_channel"
-    )
+    send = mocker.patch("apps.monitor.services.alert_lifecycle_notify.SystemMgmtUtils.send_msg_with_channel")
     alert = _alert(alert_center_channel, alert_center_notified=False)
     notifier = AlertLifecycleNotifier(
         SimpleNamespace(
@@ -352,9 +321,7 @@ def test_active_outbox_does_not_double_send_legacy_path(
     notifier.notify_alerts([alert], "created")
 
     send.assert_not_called()
-    assert MonitorAlertCenterDelivery.objects.filter(
-        alert=alert, status=MonitorAlertCenterDelivery.Status.PENDING
-    ).exists()
+    assert MonitorAlertCenterDelivery.objects.filter(alert=alert, status=MonitorAlertCenterDelivery.Status.PENDING).exists()
     alert.refresh_from_db()
     assert alert.alert_center_notified is False
 
@@ -406,15 +373,11 @@ def test_backfill_restores_missing_created_before_recovered(alert_center_channel
 
     assert backfill_legacy_alerts() == 1
 
-    deliveries = list(
-        MonitorAlertCenterDelivery.objects.filter(alert=alert).order_by("generation")
-    )
+    deliveries = list(MonitorAlertCenterDelivery.objects.filter(alert=alert).order_by("generation"))
     assert [item.action for item in deliveries] == ["created", "recovered"]
 
 
-def test_backfill_restores_created_predecessor_only_for_missing_channel(
-    alert_center_channel, monkeypatch
-):
+def test_backfill_restores_created_predecessor_only_for_missing_channel(alert_center_channel, monkeypatch):
     second_channel = Channel.objects.create(
         name="告警中心二",
         channel_type="nats",
@@ -447,11 +410,7 @@ def test_backfill_restores_created_predecessor_only_for_missing_channel(
 
     assert backfill_legacy_alerts() == 1
 
-    assert list(
-        MonitorAlertCenterDelivery.objects.filter(alert=alert)
-        .order_by("generation")
-        .values_list("action", "channel_id")
-    ) == [
+    assert list(MonitorAlertCenterDelivery.objects.filter(alert=alert).order_by("generation").values_list("action", "channel_id")) == [
         ("created", second_channel.id),
         ("recovered", alert_center_channel.id),
         ("recovered", second_channel.id),
@@ -474,32 +433,20 @@ def test_outbox_ignores_non_alert_center_channels(alert_center_channel, monkeypa
         alert_center_channel,
         notice_type_ids=[normal_channel.id, alert_center_channel.id],
     )
-    notifier = AlertLifecycleNotifier(
-        SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True)
-    )
+    notifier = AlertLifecycleNotifier(SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True))
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.SystemMgmtUtils.probe_notification_channel",
         lambda channel_id, capability_only=False: {
-            "delivery_mode": (
-                "alert_event_copy"
-                if channel_id == alert_center_channel.id
-                else "direct_recipient"
-            )
+            "delivery_mode": ("alert_event_copy" if channel_id == alert_center_channel.id else "direct_recipient")
         },
     )
 
     enqueue_alert_center_deliveries([alert], "created", notifier=notifier)
 
-    assert list(
-        MonitorAlertCenterDelivery.objects.filter(alert=alert).values_list(
-            "channel_id", flat=True
-        )
-    ) == [alert_center_channel.id]
+    assert list(MonitorAlertCenterDelivery.objects.filter(alert=alert).values_list("channel_id", flat=True)) == [alert_center_channel.id]
 
 
-def test_capability_rpc_failure_does_not_rollback_domain_state(
-    alert_center_channel, monkeypatch
-):
+def test_capability_rpc_failure_does_not_rollback_domain_state(alert_center_channel, monkeypatch):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         True,
@@ -522,9 +469,7 @@ def test_capability_rpc_failure_does_not_rollback_domain_state(
             status="recovered",
             alert_center_notified=False,
         )
-        assert enqueue_alert_center_deliveries(
-            [alert], "recovered", notifier=notifier
-        ) == []
+        assert enqueue_alert_center_deliveries([alert], "recovered", notifier=notifier) == []
 
     alert.refresh_from_db()
     assert alert.status == "recovered"
@@ -533,18 +478,14 @@ def test_capability_rpc_failure_does_not_rollback_domain_state(
     assert not MonitorAlertCenterDelivery.objects.filter(alert=alert).exists()
 
 
-def test_backfill_notice_disabled_keeps_valid_terminal_lifecycle(
-    alert_center_channel, monkeypatch
-):
+def test_backfill_notice_disabled_keeps_valid_terminal_lifecycle(alert_center_channel, monkeypatch):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         True,
     )
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.SystemMgmtUtils.probe_notification_channel",
-        lambda channel_id, capability_only=False: {
-            "delivery_mode": "alert_event_copy"
-        },
+        lambda channel_id, capability_only=False: {"delivery_mode": "alert_event_copy"},
     )
     policy = SimpleNamespace(
         id=7,
@@ -571,9 +512,7 @@ def test_backfill_notice_disabled_keeps_valid_terminal_lifecycle(
     )
 
     assert backfill_legacy_alerts() == 1
-    assert MonitorAlertCenterDelivery.objects.filter(
-        alert=alert, action="recovered"
-    ).exists()
+    assert MonitorAlertCenterDelivery.objects.filter(alert=alert, action="recovered").exists()
 
 
 def test_created_and_recovered_keep_independent_ordered_immutable_payloads(alert_center_channel, monkeypatch):
@@ -598,8 +537,11 @@ def test_created_and_recovered_keep_independent_ordered_immutable_payloads(alert
     deliveries = list(MonitorAlertCenterDelivery.objects.filter(alert=alert).order_by("generation"))
     assert [(item.action, item.generation) for item in deliveries] == [("created", 1), ("recovered", 2)]
     assert deliveries[0].payload == created_payload
-    assert deliveries[0].payload["title"] == "CPU 高"
-    assert deliveries[1].payload["title"] == "CPU 已恢复"
+    assert deliveries[0].payload["title"] == "CPU 策略"
+    assert deliveries[0].payload["description"] == "CPU 高"
+    assert deliveries[1].payload["title"] == "CPU 策略"
+    assert deliveries[1].payload["description"] == "CPU 已恢复"
+    assert deliveries[0].payload["title"] != deliveries[0].payload["description"]
     alert.refresh_from_db()
     assert alert.alert_center_notified is False
 
@@ -621,16 +563,10 @@ def test_multi_channel_enqueue_is_idempotent_across_retries(alert_center_channel
         alert_center_channel,
         notice_type_ids=[alert_center_channel.id, second_channel.id],
     )
-    notifier = AlertLifecycleNotifier(
-        SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True)
-    )
+    notifier = AlertLifecycleNotifier(SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True))
 
-    first_ids = enqueue_alert_center_deliveries(
-        [alert], "created", notifier=notifier
-    )
-    second_ids = enqueue_alert_center_deliveries(
-        [alert], "created", notifier=notifier
-    )
+    first_ids = enqueue_alert_center_deliveries([alert], "created", notifier=notifier)
+    second_ids = enqueue_alert_center_deliveries([alert], "created", notifier=notifier)
 
     assert len(first_ids) == 2
     assert second_ids == []
@@ -704,9 +640,7 @@ def test_stale_delivering_lease_is_reclaimed(alert_center_channel, monkeypatch):
         attempts=1,
     )
     stale_at = django_timezone.now() - timedelta(minutes=6)
-    MonitorAlertCenterDelivery.objects.filter(id=delivery.id).update(
-        updated_at=stale_at
-    )
+    MonitorAlertCenterDelivery.objects.filter(id=delivery.id).update(updated_at=stale_at)
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.SystemMgmtUtils.dispatch_notification",
         lambda **kwargs: {"result": True, "data": {}},
@@ -881,9 +815,7 @@ def test_terminal_failure_only_blocks_the_same_channel(alert_center_channel, mon
     assert healthy.status == MonitorAlertCenterDelivery.Status.DELIVERED
 
 
-def test_successor_enqueued_after_terminal_failure_is_closed(
-    alert_center_channel, monkeypatch
-):
+def test_successor_enqueued_after_terminal_failure_is_closed(alert_center_channel, monkeypatch):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         True,
@@ -907,23 +839,15 @@ def test_successor_enqueued_after_terminal_failure_is_closed(
     )
 
     assert deliver_alert_center_delivery(first.id) is False
-    notifier = AlertLifecycleNotifier(
-        SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True)
-    )
-    enqueue_alert_center_deliveries(
-        [alert], "recovered", notifier=notifier
-    )
+    notifier = AlertLifecycleNotifier(SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True))
+    enqueue_alert_center_deliveries([alert], "recovered", notifier=notifier)
 
-    second = MonitorAlertCenterDelivery.objects.get(
-        alert=alert, generation=2
-    )
+    second = MonitorAlertCenterDelivery.objects.get(alert=alert, generation=2)
     assert second.status == MonitorAlertCenterDelivery.Status.FAILED
     assert second.last_error == "blocked by terminal generation 1"
 
 
-def test_terminal_finalize_serializes_with_concurrent_successor_enqueue(
-    alert_center_channel, monkeypatch
-):
+def test_terminal_finalize_serializes_with_concurrent_successor_enqueue(alert_center_channel, monkeypatch):
     monkeypatch.setattr(
         "apps.monitor.services.alert_center_delivery.ALERT_CENTER_OUTBOX_ENABLED",
         True,
@@ -937,20 +861,16 @@ def test_terminal_finalize_serializes_with_concurrent_successor_enqueue(
         channel_id=alert_center_channel.id,
         payload={"title": "first", "organizations": [1]},
     )
-    notifier = AlertLifecycleNotifier(
-        SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True)
-    )
+    notifier = AlertLifecycleNotifier(SimpleNamespace(id=7, name="CPU 策略", organizations=[1], notice=True))
     finalize_started = Event()
     allow_finalize = Event()
     enqueue_started = Event()
     enqueue_finished = Event()
     errors = []
-    original_fail_successors = (
-        __import__(
-            "apps.monitor.services.alert_center_delivery",
-            fromlist=["_fail_blocked_successors"],
-        )._fail_blocked_successors
-    )
+    original_fail_successors = __import__(
+        "apps.monitor.services.alert_center_delivery",
+        fromlist=["_fail_blocked_successors"],
+    )._fail_blocked_successors
 
     def hold_terminal_transaction(record):
         original_fail_successors(record)
@@ -984,9 +904,7 @@ def test_terminal_finalize_serializes_with_concurrent_successor_enqueue(
         enqueue_started.set()
         try:
             fresh_alert = MonitorAlert.objects.get(id=alert.id)
-            enqueue_alert_center_deliveries(
-                [fresh_alert], "recovered", notifier=notifier
-            )
+            enqueue_alert_center_deliveries([fresh_alert], "recovered", notifier=notifier)
         except Exception as exc:  # pragma: no cover - assertion reports below
             errors.append(exc)
         finally:
