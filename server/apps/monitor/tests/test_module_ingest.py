@@ -1612,3 +1612,10 @@ def test_extract_credential_resolves_system_mgmt_id():
     assert extracted["username"] == "root"
     assert extracted["password"] == "store-secret"
     assert extracted["credential_id"] == str(stored.id)
+
+    by_system_id = MonitorModuleIngestService._extract_credential(
+        {"credential": {"credential_id": "cred_pool", "system_credential_id": str(stored.id)}}
+    )
+    assert by_system_id["password"] == "store-secret"
+    assert by_system_id["credential_id"] == "cred_pool"
+    assert by_system_id["system_credential_id"] == str(stored.id)

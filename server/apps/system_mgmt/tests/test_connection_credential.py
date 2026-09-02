@@ -9,6 +9,23 @@ pytestmark = pytest.mark.django_db
 V = "/api/v1/system_mgmt/connection_credential"
 
 
+def _list_items(response):
+    payload = response.data
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        raise AssertionError(f"unexpected list payload: {payload!r}")
+    for key in ("items", "results", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            nested = value.get("items") or value.get("results")
+            if isinstance(nested, list):
+                return nested
+    raise AssertionError(f"list response has no items: {payload!r}")
+
+
 def _super_client():
     from apps.base.models import User as BaseUser
 
@@ -62,9 +79,12 @@ def test_create_and_list_omits_secret_material():
 
     listed = client.get(f"{V}/")
     assert listed.status_code == 200
-    items = listed.data["items"] if isinstance(listed.data, dict) else listed.data
+    items = _list_items(listed)
     assert items
-    assert "payload" not in items[0]
+    row = next(item for item in items if item["id"] == created.data["id"])
+    assert row["name"] == "ssh-prod"
+    assert "payload" not in row
+    assert "password" not in row
     assert "s3cret" not in str(listed.data)
     assert ConnectionCredential.objects.get(pk=created.data["id"]).payload.get("password") != "s3cret"
 
@@ -109,7 +129,8 @@ def test_update_keeps_old_secret_when_masked_and_delete():
     assert ConnectionCredentialService.resolve(instance.id)["username"] == "ops"
 
     deleted = client.delete(f"{V}/{instance.id}/")
-    assert deleted.status_code == 204
+    # CustomRenderer 将 DELETE 204 改写为 200
+    assert deleted.status_code in (200, 204)
     assert ConnectionCredential.objects.filter(pk=instance.id).exists() is False
 
 
@@ -129,7 +150,7 @@ def test_team_isolation_list_and_retrieve():
     client, _user = _tenant_client("tenant-a", 1)
     listed = client.get(f"{V}/")
     assert listed.status_code == 200
-    items = listed.data["items"] if isinstance(listed.data, dict) else listed.data
+    items = _list_items(listed)
     names = {item["name"] for item in items}
     assert names == {"team-1"}
     forbidden = client.get(f"{V}/{other.id}/")

@@ -15,6 +15,7 @@ from apps.cmdb.constants.constants import (
     CollectRunStatusType,
     DataCleanupStrategy,
 )
+from apps.cmdb.services.encrypt_collect_password import get_collect_model_passwords  # noqa: F401
 from apps.core.models.maintainer_info import MaintainerInfo
 from apps.core.models.time_info import TimeInfo
 from apps.core.utils.crypto.password_crypto import PasswordCrypto

@@ -1,7 +1,6 @@
 from django_filters import filters
 from django_filters.rest_framework import FilterSet
 from rest_framework import viewsets
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from apps.core.decorators.api_permission import HasPermission
@@ -11,12 +10,7 @@ from apps.system_mgmt.models.connection_credential import ConnectionCredential
 from apps.system_mgmt.serializers.connection_credential_serializer import ConnectionCredentialListSerializer, ConnectionCredentialSerializer
 from apps.system_mgmt.utils.group_filter_mixin import filter_queryset_by_group_ids, get_unauthorized_group_ids, get_user_group_ids
 from apps.system_mgmt.utils.operation_log_utils import log_operation
-
-
-class ConnectionCredentialPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = "page_size"
-    max_page_size = 200
+from config.drf.pagination import CustomPageNumberPagination
 
 
 class ConnectionCredentialFilter(FilterSet):
@@ -28,7 +22,7 @@ class ConnectionCredentialViewSet(viewsets.ModelViewSet, GenericViewSetFun):
     queryset = ConnectionCredential.objects.all()
     serializer_class = ConnectionCredentialSerializer
     filterset_class = ConnectionCredentialFilter
-    pagination_class = ConnectionCredentialPagination
+    pagination_class = CustomPageNumberPagination
     http_method_names = ["get", "post", "put", "delete", "options"]
 
     def get_serializer_class(self):

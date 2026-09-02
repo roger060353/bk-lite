@@ -220,6 +220,8 @@ def _normalize_influxdb_credential(item: dict) -> dict:
     }
     if item.get("credential_id"):
         normalized["credential_id"] = item["credential_id"]
+    if item.get("system_credential_id"):
+        normalized["system_credential_id"] = item["system_credential_id"]
     for key in ("token", "password"):
         if item.get(key) not in (None, ""):
             normalized[key] = item[key]

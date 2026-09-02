@@ -34,6 +34,7 @@ from apps.cmdb.services.winsphere_endpoint import normalize_winsphere_management
 from apps.cmdb.utils.config_file_path import validate_absolute_path
 from apps.cmdb.utils.permission_util import CmdbRulesFormatUtil
 from apps.core.utils.serializers import AuthSerializer, UsernameSerializer
+from apps.system_mgmt.services.connection_credential_service import DEFAULT_SECRET_FIELDS
 
 COLLECT_RESULT_PAYLOAD_FIELDS = (
     "collect_data",
@@ -306,13 +307,17 @@ class CollectModelSerializer(AuthSerializer):
         else:
             return
 
-        encrypted_fields = get_collect_model_passwords(
-            collect_model_id=model_id,
-            driver_type=self._get_attr_or_instance_value(
-                attrs,
-                "driver_type",
-            ),
+        encrypted_fields = set(
+            get_collect_model_passwords(
+                collect_model_id=model_id,
+                driver_type=self._get_attr_or_instance_value(
+                    attrs,
+                    "driver_type",
+                ),
+            )
+            or []
         )
+        encrypted_fields.update(DEFAULT_SECRET_FIELDS)
         masked_fields = sorted(
             {
                 field
@@ -661,7 +666,8 @@ class CollectModelSerializer(AuthSerializer):
         representation = super().to_representation(instance)
         # 对返回的凭据中的密码字段进行脱敏处理；ID 引用先解析再掩码，旧前端仍能看到用户名。
         credential = CollectCredentialPoolService.normalize_pool(copy.deepcopy(instance.decrypt_credentials))
-        encrypted_fields = get_collect_model_passwords(collect_model_id=instance.model_id, driver_type=instance.driver_type)
+        encrypted_fields = set(get_collect_model_passwords(collect_model_id=instance.model_id, driver_type=instance.driver_type) or [])
+        encrypted_fields.update(DEFAULT_SECRET_FIELDS)
         for item in credential:
             if not isinstance(item, dict):
                 continue

@@ -19,6 +19,7 @@ from apps.cmdb.services.collect_credential_contract import API_SECRET_MASK
 from apps.cmdb.services.collect_credential_pool_service import CollectCredentialPoolService
 from apps.cmdb.services.encrypt_collect_password import get_collect_model_passwords
 from apps.core.utils.serializers import AuthSerializer, UsernameSerializer
+from apps.system_mgmt.services.connection_credential_service import DEFAULT_SECRET_FIELDS
 
 
 class ScanPagination(PageNumberPagination):
@@ -157,10 +158,14 @@ class ScanTaskSerializer(AuthSerializer):
             return raw
         for model_id, pool in raw.items():
             items = CollectCredentialPoolService.normalize_pool(copy.deepcopy(pool))
-            encrypted_fields = get_collect_model_passwords(
-                collect_model_id=model_id,
-                driver_type=scan_driver_type_for_model(model_id),
+            encrypted_fields = set(
+                get_collect_model_passwords(
+                    collect_model_id=model_id,
+                    driver_type=scan_driver_type_for_model(model_id),
+                )
+                or []
             )
+            encrypted_fields.update(DEFAULT_SECRET_FIELDS)
             for item in items:
                 if not isinstance(item, dict):
                     continue
@@ -179,10 +184,14 @@ class ScanTaskSerializer(AuthSerializer):
             old_pool = CollectCredentialPoolService.normalize_pool(existing.get(model_id) or [])
             old_by_id = {item.get("credential_id"): item for item in old_pool}
             new_pool = []
-            encrypted_fields = get_collect_model_passwords(
-                collect_model_id=model_id,
-                driver_type=scan_driver_type_for_model(model_id),
+            encrypted_fields = set(
+                get_collect_model_passwords(
+                    collect_model_id=model_id,
+                    driver_type=scan_driver_type_for_model(model_id),
+                )
+                or []
             )
+            encrypted_fields.update(DEFAULT_SECRET_FIELDS)
             for item in CollectCredentialPoolService.normalize_pool(pool):
                 merged_item = dict(item)
                 old_item = old_by_id.get(item.get("credential_id")) or {}
@@ -215,10 +224,14 @@ class ScanTaskSerializer(AuthSerializer):
         credentials = self._merge_masked_credentials(credentials)
         if self.instance is None:
             for model_id, pool in credentials.items():
-                encrypted_fields = get_collect_model_passwords(
-                    collect_model_id=model_id,
-                    driver_type=scan_driver_type_for_model(model_id),
+                encrypted_fields = set(
+                    get_collect_model_passwords(
+                        collect_model_id=model_id,
+                        driver_type=scan_driver_type_for_model(model_id),
+                    )
+                    or []
                 )
+                encrypted_fields.update(DEFAULT_SECRET_FIELDS)
                 for item in CollectCredentialPoolService.normalize_pool(pool):
                     for field in encrypted_fields:
                         if item.get(field) == API_SECRET_MASK:
