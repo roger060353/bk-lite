@@ -155,3 +155,84 @@ def test_team_isolation_list_and_retrieve():
     assert names == {"team-1"}
     forbidden = client.get(f"{V}/{other.id}/")
     assert forbidden.status_code == 404
+
+
+def _store_credential(name="shared-ssh"):
+    return ConnectionCredentialService.create(
+        name=name,
+        credential_type="host",
+        team=[1],
+        payload={"username": "root", "password": "store-secret"},
+    )
+
+
+def test_delete_fails_when_collect_task_references_store_id():
+    stored = _store_credential("collect-ref")
+    from apps.cmdb.models.collect_model import CollectModels
+
+    CollectModels.objects.create(
+        name="uses-store",
+        task_type="host",
+        driver_type="job",
+        model_id="host",
+        cycle_value_type="cycle",
+        team=[1],
+        credential=[{"credential_id": "cred_pool", "system_credential_id": str(stored.id)}],
+    )
+    client, _admin = _super_client()
+    deleted = client.delete(f"{V}/{stored.id}/")
+    assert deleted.status_code == 409
+    assert "采集任务" in str(deleted.data)
+    assert "uses-store" in str(deleted.data)
+    assert ConnectionCredential.objects.filter(pk=stored.id).exists()
+
+
+def test_delete_fails_when_scan_task_references_numeric_credential_id():
+    stored = _store_credential("scan-ref")
+    from apps.cmdb.models.scan_model import ScanTask
+
+    ScanTask.objects.create(
+        name="scan-uses-store",
+        team=[1],
+        families=["mysql"],
+        credentials={"mysql": [{"credential_id": str(stored.id)}]},
+    )
+    client, _admin = _super_client()
+    deleted = client.delete(f"{V}/{stored.id}/")
+    assert deleted.status_code == 409
+    assert "扫描任务" in str(deleted.data)
+    assert ConnectionCredential.objects.filter(pk=stored.id).exists()
+
+
+def test_delete_fails_when_monitor_instance_references_store_id():
+    stored = _store_credential("monitor-ref")
+    from apps.monitor.models import MonitorInstance, MonitorObject
+
+    monitor_object = MonitorObject.objects.create(name="Host-cred-guard", display_name="主机", level="base")
+    MonitorInstance.objects.create(
+        id="mon-cred-guard",
+        name="monitor-uses-store",
+        monitor_object=monitor_object,
+        summary_facts={"system_credential_id": str(stored.id)},
+    )
+    client, _admin = _super_client()
+    deleted = client.delete(f"{V}/{stored.id}/")
+    assert deleted.status_code == 409
+    assert "监控实例" in str(deleted.data)
+    assert ConnectionCredential.objects.filter(pk=stored.id).exists()
+
+
+def test_pool_key_is_not_treated_as_store_reference():
+    from apps.system_mgmt.services.connection_credential_reference import payload_references_store_id
+
+    assert payload_references_store_id({"credential_id": "cred_abc"}, 12) is False
+    assert payload_references_store_id({"credential_id": "12"}, 12) is True
+    assert payload_references_store_id({"system_credential_id": "12", "credential_id": "cred_abc"}, 12) is True
+
+
+def test_delete_succeeds_when_credential_is_unreferenced():
+    stored = _store_credential("free-cred")
+    client, _admin = _super_client()
+    deleted = client.delete(f"{V}/{stored.id}/")
+    assert deleted.status_code in (200, 204)
+    assert ConnectionCredential.objects.filter(pk=stored.id).exists() is False

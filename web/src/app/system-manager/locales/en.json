@@ -686,7 +686,8 @@
         "key": "Keys",
         "portal": "Portal",
         "license": "License",
-        "networkWhitelist": "Network Whitelist"
+        "networkWhitelist": "Network Whitelist",
+        "connectionCredential": "Connection Credentials"
       },
       "secret": {
         "title": "API Secret Keys",
@@ -899,6 +900,39 @@
         "networkRequired": "Please enter a CIDR or IP",
         "domainRequired": "Please enter the private deployment hostname",
         "metadataHint": "Cloud metadata addresses (e.g. 169.254.169.254) are never allowed"
+      },
+      "connectionCredential": {
+        "title": "Connection Credentials",
+        "content": "Manage connection credentials used by collect, scan, and monitor tasks. Tasks store only an ID. The list never shows secrets.",
+        "add": "Create credential",
+        "edit": "Edit credential",
+        "name": "Name",
+        "nameRequired": "Enter a credential name",
+        "namePlaceholder": "e.g. ssh-prod",
+        "type": "Type",
+        "typeRequired": "Select a credential type",
+        "teamRequired": "Select an organization",
+        "teamPlaceholder": "Select organization",
+        "usernamePlaceholder": "Username",
+        "passwordRequired": "Enter a password",
+        "community": "Community",
+        "communityRequired": "Enter the SNMP community",
+        "token": "Token",
+        "tokenRequired": "Enter a token",
+        "port": "Port",
+        "secretPlaceholder": "Secrets never appear in the list",
+        "searchPlaceholder": "Search by name",
+        "updatedAt": "Updated",
+        "deleteConfirm": "Delete this connection credential? Delete fails while collect, scan, or monitor tasks still reference it.",
+        "types": {
+          "host": "Host",
+          "ssh": "SSH",
+          "mysql": "MySQL",
+          "postgresql": "PostgreSQL",
+          "mssql": "MSSQL",
+          "snmp": "SNMP",
+          "influxdb": "InfluxDB"
+        }
       },
       "portal": {
         "title": "Portal Settings",

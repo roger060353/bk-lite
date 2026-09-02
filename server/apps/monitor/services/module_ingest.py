@@ -612,6 +612,7 @@ class MonitorModuleIngestService:
             instance.save(update_fields=update_fields + ["updated_at"])
         org_ids = cls._normalize_org_ids(raw, allowed_org_ids)
         cls._bind_organizations(instance, org_ids, operator=operator)
+        cls._remember_store_credential(instance, credential)
         return instance
 
     @classmethod
@@ -848,6 +849,24 @@ class MonitorModuleIngestService:
             update_fields.append("cloud_region_id")
         if update_fields:
             instance.save(update_fields=update_fields + ["updated_at"])
+        cls._remember_store_credential(instance, credential)
+        return instance
+
+    @staticmethod
+    def _remember_store_credential(instance, credential):
+        """监控实例记下系统管理凭据 ID，删除凭据时才能拦截仍在用的引用。"""
+        if instance is None or not isinstance(credential, dict):
+            return instance
+        store_id = credential.get("system_credential_id") or credential.get("credential_id")
+        if store_id in (None, "") or not str(store_id).strip().isdigit():
+            return instance
+        facts = dict(instance.summary_facts or {})
+        next_id = str(store_id).strip()
+        if facts.get("system_credential_id") == next_id:
+            return instance
+        facts["system_credential_id"] = next_id
+        instance.summary_facts = facts
+        instance.save(update_fields=["summary_facts", "updated_at"])
         return instance
 
     @staticmethod

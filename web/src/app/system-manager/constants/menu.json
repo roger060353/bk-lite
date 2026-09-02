@@ -136,6 +136,12 @@
           "url": "/system-manager/settings/network-whitelist",
           "icon": "whitelist",
           "name": "network_white_list"
+        },
+        {
+          "title": "连接凭据",
+          "url": "/system-manager/settings/connection-credentials",
+          "icon": "key",
+          "name": "connection_credential"
         }
       ]
     }
@@ -275,6 +281,12 @@
           "url": "/system-manager/settings/network-whitelist",
           "icon": "whitelist",
           "name": "network_white_list"
+        },
+        {
+          "title": "Connection Credentials",
+          "url": "/system-manager/settings/connection-credentials",
+          "icon": "key",
+          "name": "connection_credential"
         }
       ]
     }

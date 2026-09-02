@@ -30,6 +30,7 @@ error:
   no_permission_edit_group: 您没有权限编辑此组。
   cannot_create_under_virtual_group: 不能在虚拟组下创建子组。
   no_permission_delete_group: 您没有权限删除此组。
+  connection_credential_in_use: 连接凭据仍被任务引用，无法删除
   some_roles_not_exist: 角色不存在
   login_module_name_exists: 已存在同名且同类型的登录模块。
   default_group_cannot_modify: 默认组无法修改。

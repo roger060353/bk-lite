@@ -686,7 +686,8 @@
         "key": "密钥",
         "portal": "门户",
         "license": "许可",
-        "networkWhitelist": "白名单"
+        "networkWhitelist": "白名单",
+        "connectionCredential": "连接凭据"
       },
       "secret": {
         "title": "API密钥",
@@ -899,6 +900,39 @@
         "networkRequired": "请输入 CIDR 或 IP",
         "domainRequired": "请输入私有化部署域名",
         "metadataHint": "云元数据地址（169.254.169.254 等）不会被放行"
+      },
+      "connectionCredential": {
+        "title": "连接凭据",
+        "content": "统一管理采集、扫描和监控使用的连接凭据。任务只引用凭据 ID，列表不展示密钥。",
+        "add": "新建凭据",
+        "edit": "编辑凭据",
+        "name": "名称",
+        "nameRequired": "请输入凭据名称",
+        "namePlaceholder": "如 ssh-prod",
+        "type": "类型",
+        "typeRequired": "请选择凭据类型",
+        "teamRequired": "请选择组织",
+        "teamPlaceholder": "选择组织",
+        "usernamePlaceholder": "用户名",
+        "passwordRequired": "请输入密码",
+        "community": "团体字",
+        "communityRequired": "请输入 SNMP 团体字",
+        "token": "Token",
+        "tokenRequired": "请输入 Token",
+        "port": "端口",
+        "secretPlaceholder": "密钥不会出现在列表中",
+        "searchPlaceholder": "按名称搜索",
+        "updatedAt": "更新时间",
+        "deleteConfirm": "确定删除该连接凭据吗？仍被采集、扫描或监控引用时无法删除。",
+        "types": {
+          "host": "主机",
+          "ssh": "SSH",
+          "mysql": "MySQL",
+          "postgresql": "PostgreSQL",
+          "mssql": "MSSQL",
+          "snmp": "SNMP",
+          "influxdb": "InfluxDB"
+        }
       },
       "portal": {
         "title": "门户设置",

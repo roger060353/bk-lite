@@ -8,6 +8,7 @@ from apps.core.utils.loader import LanguageLoader
 from apps.core.utils.viewset_utils import GenericViewSetFun
 from apps.system_mgmt.models.connection_credential import ConnectionCredential
 from apps.system_mgmt.serializers.connection_credential_serializer import ConnectionCredentialListSerializer, ConnectionCredentialSerializer
+from apps.system_mgmt.services.connection_credential_reference import ConnectionCredentialInUseError, assert_connection_credential_unused
 from apps.system_mgmt.utils.group_filter_mixin import filter_queryset_by_group_ids, get_unauthorized_group_ids, get_user_group_ids
 from apps.system_mgmt.utils.operation_log_utils import log_operation
 from config.drf.pagination import CustomPageNumberPagination
@@ -117,6 +118,10 @@ class ConnectionCredentialViewSet(viewsets.ModelViewSet, GenericViewSetFun):
         if not is_valid:
             return error_response
         name = obj.name
+        try:
+            assert_connection_credential_unused(obj.id)
+        except ConnectionCredentialInUseError as exc:
+            return Response({"result": False, "message": exc.message}, status=exc.STATUS_CODE)
         response = super().destroy(request, *args, **kwargs)
         if response.status_code == 204:
             log_operation(request, "delete", "system-manager", f"删除连接凭据: {name}")
