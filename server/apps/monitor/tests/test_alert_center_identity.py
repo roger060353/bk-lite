@@ -57,7 +57,7 @@ def test_payload_uses_cmdb_uuid_and_independent_title():
     )
     assert payload["title"] == "磁盘策略"
     assert payload["description"] == "CPU 超阈值"
-    assert payload["resource_id"] == INST_UUID
+    assert payload["resource_id"] == "inst-1"
     assert payload["resource_type"] == "mysql"
     assert payload["inst_uuid"] == INST_UUID
     assert payload["model"] == "mysql"

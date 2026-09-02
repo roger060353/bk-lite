@@ -1,7 +1,9 @@
 """告警中心实例身份：inst_uuid / model / original_labels。
 
 监控、日志生产者把这三项写入标准 Event 契约；告警中心 API 再从
-resource_*、labels、tags、raw_data 回读。不新增表字段，避免本切片迁移。
+labels / raw_data（以及 model 的 resource_type、original_labels 的 tags）回读。
+inst_uuid 不回退 resource_id：后者是未恢复告警指纹，不是 CMDB 身份。
+不新增表字段，避免本切片迁移。
 """
 
 from __future__ import annotations
@@ -87,11 +89,7 @@ def extract_instance_identity(obj: Any) -> dict[str, Any]:
     if not isinstance(tags, dict):
         tags = {}
 
-    inst_uuid = (
-        optional_inst_uuid(labels.get(LABEL_INST_UUID))
-        or optional_inst_uuid(raw_data.get(LABEL_INST_UUID))
-        or optional_inst_uuid(getattr(obj, "resource_id", None))
-    )
+    inst_uuid = optional_inst_uuid(labels.get(LABEL_INST_UUID)) or optional_inst_uuid(raw_data.get(LABEL_INST_UUID))
     model = (
         normalize_model_id(labels.get(LABEL_MODEL))
         or normalize_model_id(raw_data.get(LABEL_MODEL))

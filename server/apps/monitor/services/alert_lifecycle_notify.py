@@ -555,7 +555,7 @@ class AlertLifecycleNotifier:
             "lifecycle_action": action,
             "start_time": start_time,
             "end_time": end_time,
-            "resource_id": inst_uuid or alert.monitor_instance_id,
+            "resource_id": alert.monitor_instance_id,
             "resource_type": model,
             "resource_name": getattr(alert, "monitor_instance_name", ""),
             "organizations": self._resolve_alert_organizations(alert, instance_org_map, policy),

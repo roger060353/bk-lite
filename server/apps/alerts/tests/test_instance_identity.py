@@ -36,13 +36,13 @@ def test_sanitize_original_labels_drops_secrets_and_nested_values():
 
 
 @pytest.mark.unit
-def test_extract_prefers_labels_then_resource_uuid():
+def test_extract_prefers_labels_over_raw_data():
     obj = SimpleNamespace(
         labels={LABEL_INST_UUID: INST_UUID.upper(), LABEL_MODEL: "mysql"},
-        resource_id="monitor-inst-1",
+        resource_id=INST_UUID,
         resource_type="host",
         tags={"env": "prod"},
-        raw_data={},
+        raw_data={LABEL_INST_UUID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"},
     )
     identity = extract_instance_identity(obj)
     assert identity[LABEL_INST_UUID] == INST_UUID
@@ -59,10 +59,10 @@ def test_optional_inst_uuid_is_silent_for_legacy_numeric_and_invalid():
 
 
 @pytest.mark.unit
-def test_extract_ignores_numeric_resource_id_as_inst_uuid():
+def test_extract_does_not_treat_resource_id_as_inst_uuid():
     obj = SimpleNamespace(
         labels={},
-        resource_id="1704",
+        resource_id=INST_UUID,
         resource_type="host",
         tags={},
         raw_data={},
@@ -81,7 +81,7 @@ def test_merge_keeps_identity_when_operational_labels_differ():
             LABEL_MODEL: "mysql",
             LABEL_ORIGINAL_LABELS: {"ip": "10.0.0.1"},
         },
-        resource_id=INST_UUID,
+        resource_id="monitor-inst-1",
         resource_type="mysql",
         tags={"ip": "10.0.0.1"},
         raw_data={},
@@ -94,7 +94,7 @@ def test_merge_keeps_identity_when_operational_labels_differ():
             LABEL_MODEL: "mysql",
             LABEL_ORIGINAL_LABELS: {"ip": "10.0.0.1"},
         },
-        resource_id=INST_UUID,
+        resource_id="monitor-inst-1",
         resource_type="mysql",
         tags={"ip": "10.0.0.1"},
         raw_data={},
@@ -108,9 +108,9 @@ def test_merge_keeps_identity_when_operational_labels_differ():
 @pytest.mark.unit
 def test_alert_serializer_exposes_identity_fields():
     alert = SimpleNamespace(
-        resource_id=INST_UUID,
+        resource_id="monitor-inst-1",
         resource_type="postgresql",
-        labels={LABEL_ORIGINAL_LABELS: {"port": "5432"}},
+        labels={LABEL_INST_UUID: INST_UUID, LABEL_ORIGINAL_LABELS: {"port": "5432"}},
         tags={},
         raw_data={},
     )

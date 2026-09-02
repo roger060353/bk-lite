@@ -15,15 +15,16 @@ Status: implementing
 
 ## Solution
 
-- 监控：有规范 UUIDv4 的 `MonitorInstance.cmdb_id` 时，`resource_id` / `inst_uuid`
-  用该 UUID；`resource_type` / `model` 按监控对象名映射 CMDB `model_id`（未知对象
-  保持空，不回落 host）。`title` 用策略展示名，`description` 用告警正文。
+- 监控：`resource_id` 始终是 `monitor_instance_id`（未恢复告警指纹，本片不改语义）。
+  已关联 CMDB 且 `cmdb_id` 为规范 UUIDv4 时，把 `inst_uuid` 写入 labels / raw_data /
+  API；未关联则为空。`model` 按监控对象名映射 CMDB `model_id`（未知对象保持空，
+  不回落 host）。`title` 用策略展示名，`description` 用告警正文。
   `original_labels` 来自指标 dimensions，密钥类键丢弃。
 - 日志：`title` 用 `policy.alert_name`，`description` 用正文。`inst_uuid` / `model`
   契约键必须在、值可空（日志尚无 CMDB 链接）。能从 `source_id` 解析出的
   `key=value` 作为 `original_labels`。
-- 告警中心不新增列。身份写入 `resource_*`、`labels`、`tags` 和 `raw_data`。
-  聚合时即使生命周期 labels 不一致，仍回填稳定身份键。
+- 告警中心不新增列。`inst_uuid` 只写入 labels / raw_data / API，不回退 `resource_id`。
+  聚合时即使生命周期 labels 不一致，仍回填稳定身份键。不切开、不重开旧未恢复告警。
 - Web / OpenAPI 序列化一等暴露 `inst_uuid`、`model`、`original_labels`。
 
 ## Out Of Scope
@@ -35,6 +36,6 @@ Status: implementing
 
 ## Compatibility
 
-- 无 `cmdb_id` 时监控仍用 `monitor_instance_id` 作 `resource_id`，与旧行为兼容。
+- `resource_id` 写入路径与 master 相同：始终 `alert.monitor_instance_id`。
 - 旧数字图 ID 不得当作 `inst_uuid`。
 - 新增顶层键对旧接收端可忽略。

@@ -243,6 +243,7 @@ class TestBuildAlertCenterPayload:
         payload = n._build_alert_center_payload(alert, "created", "sys", "auto", {"('h1',)": [3]})
         assert payload["external_id"] == "al-1"
         assert payload["rule_id"] == "7"
+        assert payload["resource_id"] == alert.monitor_instance_id
         assert payload["value"] == 90.0
         assert payload["organizations"] == [3]
         assert payload["labels"]["policy_name"] == "策略A"
