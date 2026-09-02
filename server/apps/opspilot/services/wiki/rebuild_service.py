@@ -12,6 +12,7 @@ from django.db import transaction
 
 from apps.core.logger import opspilot_logger as logger
 from apps.opspilot.models import BuildRecord, KnowledgePage, Material, MaterialVersion
+from apps.opspilot.services.llm_context_budget import window_tokens_for_model_id
 from apps.opspilot.services.wiki.build_service import (
     _canonical_title,
     _create_ai_page,
@@ -26,6 +27,7 @@ from apps.opspilot.services.wiki.build_service import (
     _source_chunks_with_offsets,
     _source_locator_for_page,
     _title_key,
+    as_material_page_generation,
     generate_material_pages_with_budget,
     material_source_metadata,
     resolve_knowledge_conflict,
@@ -186,20 +188,22 @@ def _generate_pages(
     classification_root_id=None,
 ):
     if generator is not None:
-        return generator(material) or [], None
+        return generator(material) or [], None, []
     source_metadata = material_source_metadata(material)
     if structure_revision is not None:
-        budget = new_material_call_budget(material.pk)
-        pages = generate_material_pages_with_budget(
-            kb,
-            text,
-            llm_model_id,
-            budget=budget,
-            structure_revision=structure_revision,
-            classification_root_id=classification_root_id,
-            source_metadata=source_metadata,
+        budget = new_material_call_budget(material.pk, window_tokens=window_tokens_for_model_id(llm_model_id))
+        generation = as_material_page_generation(
+            generate_material_pages_with_budget(
+                kb,
+                text,
+                llm_model_id,
+                budget=budget,
+                structure_revision=structure_revision,
+                classification_root_id=classification_root_id,
+                source_metadata=source_metadata,
+            )
         )
-        return pages, budget
+        return generation.pages, budget, generation.skipped
     facts = _llm_extract_facts(text, llm_model_id)
     return (
         _llm_generate_pages(
@@ -213,6 +217,7 @@ def _generate_pages(
         )
         or [],
         None,
+        [],
     )
 
 
@@ -269,7 +274,7 @@ def _prepare_rebuild(
         text = _material_text(material)
         source_chunks = _source_chunks_with_offsets(text)
         pages = []
-        generated_pages, material_budget = _generate_pages(
+        generated_pages, material_budget, skipped = _generate_pages(
             kb,
             material,
             text,
@@ -328,6 +333,7 @@ def _prepare_rebuild(
                     if conflict_routing is not None
                     else {}
                 ),
+                "skipped": list(skipped or []),
             }
         )
     _disambiguate_prepared_source_titles(kb, prepared)

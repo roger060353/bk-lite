@@ -635,8 +635,8 @@ def test_chat_service_formats_kubernetes_data_collection_tool_server(mocker):
 
 
 def test_execute_chat_flow_test_mode_enqueues_async_run(rf, mocker):
-    sys.modules.setdefault("oracledb", object())
-    sys.modules.setdefault("pyodbc", object())
+    sys.modules.setdefault("oracledb", types.SimpleNamespace())
+    sys.modules.setdefault("pyodbc", types.SimpleNamespace())
     falkordb_module = types.ModuleType("falkordb")
     falkordb_module.Graph = type("Graph", (), {})
     falkordb_asyncio_module = types.ModuleType("falkordb.asyncio")
@@ -702,8 +702,8 @@ def test_execute_chat_flow_test_mode_enqueues_async_run(rf, mocker):
 
 
 def test_chat_flow_test_execute_task_runs_engine_with_entry_type(mocker):
-    sys.modules.setdefault("oracledb", object())
-    sys.modules.setdefault("pyodbc", object())
+    sys.modules.setdefault("oracledb", types.SimpleNamespace())
+    sys.modules.setdefault("pyodbc", types.SimpleNamespace())
     falkordb_module = types.ModuleType("falkordb")
     falkordb_module.Graph = type("Graph", (), {})
     falkordb_asyncio_module = types.ModuleType("falkordb.asyncio")
@@ -741,8 +741,8 @@ def test_chat_flow_test_execute_task_runs_engine_with_entry_type(mocker):
 
 
 def test_kubernetes_tools_loader_metadata_includes_node_diagnostics_and_collection_tools():
-    sys.modules.setdefault("oracledb", object())
-    sys.modules.setdefault("pyodbc", object())
+    sys.modules.setdefault("oracledb", types.SimpleNamespace())
+    sys.modules.setdefault("pyodbc", types.SimpleNamespace())
 
     from apps.opspilot.metis.llm.tools.tools_loader import ToolsLoader
 
@@ -756,11 +756,15 @@ def test_kubernetes_tools_loader_metadata_includes_node_diagnostics_and_collecti
     assert "collect_k8s_context_by_target_type" in tool_names
     assert "build_incident_evidence_package" in tool_names
     assert "get_kubernetes_previous_pod_logs" in tool_names
+    assert "get_not_ready_kubernetes_pods" in tool_names
+    assert "get_kubernetes_pods_top" in tool_names
+    assert "get_kubernetes_nodes_top" in tool_names
+    assert "exec_in_pod" in tool_names
 
 
 def test_kubernetes_data_collection_toolkit_exposes_only_collection_focused_tools():
-    sys.modules.setdefault("oracledb", object())
-    sys.modules.setdefault("pyodbc", object())
+    sys.modules.setdefault("oracledb", types.SimpleNamespace())
+    sys.modules.setdefault("pyodbc", types.SimpleNamespace())
 
     from apps.opspilot.metis.llm.tools.tools_loader import ToolsLoader
 
@@ -773,9 +777,13 @@ def test_kubernetes_data_collection_toolkit_exposes_only_collection_focused_tool
     assert "collect_k8s_context_by_target_type" in tool_names
     assert "build_incident_evidence_package" in tool_names
     assert "get_kubernetes_previous_pod_logs" in tool_names
+    assert "get_not_ready_kubernetes_pods" in tool_names
+    assert "get_kubernetes_pods_top" in tool_names
+    assert "get_kubernetes_nodes_top" in tool_names
     assert "restart_pod" not in tool_names
     assert "rollback_deployment" not in tool_names
     assert "delete_kubernetes_resource" not in tool_names
+    assert "exec_in_pod" not in tool_names
 
 
 def test_builtin_k8s_chatflow_uses_kubernetes_toolkit():
@@ -802,6 +810,15 @@ def test_builtin_k8s_chatflow_prompts_describe_inspection_and_html_report():
     assert "<table" in format_prompt
 
 
+NACOS_READINESS_ALERT_TEXT = (
+    "告警：Unhealthy（kubernetes，onedc_k8s_cluster，nacos-0） 检测到异常 \n"
+    '内容：Readiness probe failed: Get "http://10.91.128.82:8848/nacos/v1/console/health/readiness": '
+    "context deadline exceeded (Client.Timeout exceeded while awaiting headers) \n"
+    "告警时间:：2026-08-31 00:30:00 \n"
+    "负责人:：devil"
+)
+
+
 def test_normalize_alert_event_builds_stable_schema():
     from apps.opspilot.metis.llm.tools.kubernetes.data_collection import normalize_alert_event
 
@@ -826,6 +843,41 @@ def test_normalize_alert_event_builds_stable_schema():
     assert payload["alert_id"] == "alert-001"
     assert payload["labels"]["cluster"] == "prod-a"
     assert payload["annotations"]["summary"] == "order-api pod enters CrashLoopBackOff"
+
+
+def test_normalize_alert_event_parses_nacos_notification_text_into_cluster():
+    from apps.opspilot.metis.llm.tools.kubernetes.data_collection import normalize_alert_event
+
+    payload = json.loads(normalize_alert_event.invoke({"alert_payload": NACOS_READINESS_ALERT_TEXT}))
+
+    assert payload["title"].startswith("Unhealthy")
+    assert "nacos-0" in payload["title"]
+    assert "Readiness probe failed" in payload["message"]
+    assert "awaiting headers" in payload["message"]
+    assert payload["firing_time"] == "2026-08-31 00:30:00"
+    assert payload["labels"]["cluster"] == "onedc_k8s_cluster"
+    assert payload["labels"]["pod"] == "nacos-0"
+    assert payload["labels"]["resource_name"] == "nacos-0"
+
+
+def test_resolve_k8s_target_from_alert_accepts_nacos_notification_text():
+    from unittest.mock import patch
+
+    from apps.opspilot.metis.llm.tools.kubernetes.data_collection import resolve_k8s_target_from_alert
+
+    pods_json = json.dumps([{"name": "nacos-0", "namespace": "nacos", "phase": "Running"}])
+    with patch("apps.opspilot.metis.llm.tools.kubernetes.resources.list_kubernetes_pods") as list_pods, patch(
+        "apps.opspilot.metis.llm.tools.kubernetes.resources.list_kubernetes_events"
+    ) as list_events:
+        list_pods.invoke.return_value = pods_json
+        list_events.invoke.return_value = json.dumps([])
+        payload = json.loads(resolve_k8s_target_from_alert.invoke({"normalized_alert": NACOS_READINESS_ALERT_TEXT}))
+
+    assert payload["resolved"] is True
+    assert payload["cluster"] == "onedc_k8s_cluster"
+    assert payload["pod_name"] == "nacos-0"
+    assert payload["resource_name"] == "nacos-0"
+    assert payload["namespace"] == "nacos"
 
 
 def test_resolve_k8s_target_from_alert_prefers_pod_fields():
@@ -864,6 +916,7 @@ def test_resolve_k8s_target_from_alert_marks_missing_data_when_unresolved():
     assert payload["resource_type"] is None
     assert "resource identifier" in payload["reason"]
     assert "resource_type_or_name" in payload["missing_data"]
+    assert payload["conclusive"] is True
 
 
 def test_resolve_k8s_target_from_alert_reads_flattened_pod_name():
@@ -892,6 +945,79 @@ def test_resolve_k8s_target_from_alert_reads_flattened_pod_name():
     assert payload["resolved"] is True
     assert payload["pod_name"] == "pod1005"
     assert payload["namespace"] == "prod"
+
+
+def test_resolve_k8s_target_from_alert_reads_flattened_kind_and_name():
+    from unittest.mock import patch
+
+    from apps.opspilot.metis.llm.tools.kubernetes.data_collection import resolve_k8s_target_from_alert
+
+    alert = {
+        "cluster": "bk-lite-k3s",
+        "kind": "Pod",
+        "name": "server-69bf94649c-b8szc",
+        "alert_type": "Unhealthy",
+        "detail": "Startup probe failed: dial tcp 10.42.2.147:8000: connect: connection refused",
+        "alert_time": "2026-08-28 10:09:01",
+        "namespace": None,
+    }
+    pods_json = json.dumps([{"name": "server-69bf94649c-b8szc", "namespace": "bklite", "phase": "Running"}])
+    with patch("apps.opspilot.metis.llm.tools.kubernetes.resources.list_kubernetes_pods") as list_pods, patch(
+        "apps.opspilot.metis.llm.tools.kubernetes.resources.list_kubernetes_events"
+    ) as list_events:
+        list_pods.invoke.return_value = pods_json
+        list_events.invoke.return_value = json.dumps([])
+        result = resolve_k8s_target_from_alert.invoke({"normalized_alert": alert})
+
+    payload = json.loads(result)
+    assert payload["resolved"] is True
+    assert payload["resource_type"] == "pod"
+    assert payload["resource_name"] == "server-69bf94649c-b8szc"
+    assert payload["pod_name"] == "server-69bf94649c-b8szc"
+    assert payload["namespace"] == "bklite"
+    list_pods.invoke.assert_called_once()
+
+
+def test_resolve_k8s_target_from_alert_marks_lookup_exhausted_when_pod_gone():
+    from unittest.mock import patch
+
+    from apps.opspilot.metis.llm.tools.kubernetes.data_collection import resolve_k8s_target_from_alert
+
+    alert = {
+        "cluster": "bk-lite-k3s",
+        "kind": "Pod",
+        "name": "server-69bf94649c-b8szc",
+        "namespace": None,
+        "detail": "Startup probe failed: connection refused",
+    }
+    config = {"configurable": {}}
+    with patch("apps.opspilot.metis.llm.tools.kubernetes.resources.list_kubernetes_pods") as list_pods, patch(
+        "apps.opspilot.metis.llm.tools.kubernetes.resources.list_kubernetes_events"
+    ) as list_events:
+        list_pods.invoke.return_value = json.dumps([])
+        list_events.invoke.return_value = json.dumps([])
+        first = json.loads(resolve_k8s_target_from_alert.invoke({"normalized_alert": alert}, config=config))
+        second = json.loads(resolve_k8s_target_from_alert.invoke({"normalized_alert": alert}, config=config))
+
+    assert first["resolved"] is False
+    assert first["lookup_exhausted"] is True
+    assert first["conclusive"] is True
+    assert first["resource_name"] == "server-69bf94649c-b8szc"
+    assert first["namespace"] is None
+    assert "namespace" in first["missing_data"]
+    assert second == first
+    list_pods.invoke.assert_called_once()
+    list_events.invoke.assert_called_once()
+
+
+def test_resolve_k8s_target_from_alert_ignores_non_object_title_name():
+    from apps.opspilot.metis.llm.tools.kubernetes.data_collection import resolve_k8s_target_from_alert
+
+    result = resolve_k8s_target_from_alert.invoke({"normalized_alert": {"name": "Unhealthy", "cluster": "prod-a"}})
+    payload = json.loads(result)
+    assert payload["resolved"] is False
+    assert payload["conclusive"] is True
+    assert "resource_type_or_name" in payload["missing_data"]
 
 
 def test_resolve_k8s_target_from_alert_surfaces_kubeconfig_error():
@@ -990,6 +1116,8 @@ def test_apply_namespace_lookup_reports_multiple_candidates():
     assert updated["resolved"] is False
     assert updated["namespace_candidates"] == ["ns-a", "ns-b"]
     assert "namespace" in updated["missing_data"]
+    assert updated["lookup_exhausted"] is True
+    assert updated["conclusive"] is True
 
 
 def test_build_incident_evidence_package_wraps_uniform_evidence_blocks():

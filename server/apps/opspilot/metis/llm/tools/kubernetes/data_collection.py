@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import threading
 from datetime import datetime, timezone
 
 from langchain_core.runnables import RunnableConfig
@@ -111,6 +112,8 @@ def _unresolved_connection_result(target: dict, error: str) -> str:
     payload = dict(target or {})
     payload["resolved"] = False
     payload["error"] = error
+    payload["conclusive"] = True
+    payload["lookup_exhausted"] = True
     if not payload.get("reason"):
         payload["reason"] = error
     return json.dumps(payload, ensure_ascii=False)
@@ -212,13 +215,31 @@ def _enrich_pod_snapshot(snapshot):
     return enriched
 
 
+_K8S_KIND_NAMES = frozenset(
+    {
+        "pod",
+        "deployment",
+        "statefulset",
+        "daemonset",
+        "replicaset",
+        "job",
+        "cronjob",
+        "service",
+        "node",
+    }
+)
+K8S_TARGET_RESOLVE_TOOL_NAME = "resolve_k8s_target_from_alert"
+_resolve_cache_local = threading.local()
+
+
 def _extract_labels(alert):
     labels = alert.get("labels") or {}
     labels = dict(labels) if isinstance(labels, dict) else {}
-    # 模型常把 pod_name/namespace 放在告警顶层而不是 labels 里
+    # 模型常把 pod_name/namespace/name/kind 放在告警顶层而不是 labels 里
     for key in (
         "pod",
         "pod_name",
+        "name",
         "namespace",
         "cluster",
         "cluster_id",
@@ -239,10 +260,98 @@ def _extract_labels(alert):
 
 _PAREN_GROUP_RE = re.compile(r"[（(]([^）)]+)[）)]")
 _POD_LIKE_NAME_RE = re.compile(r"\b([a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:-[a-f0-9]{5,10}){1,2})\b", re.IGNORECASE)
+_NOTIFICATION_TITLE_RE = re.compile(r"告警[：:]\s*(.+?)(?:\n|$)")
+_NOTIFICATION_CONTENT_RE = re.compile(r"内容[：:]\s*(.+?)(?:\n|$)")
+_NOTIFICATION_TIME_RE = re.compile(r"告警时间[：:]*\s*(.+?)(?:\n|$)")
+_K8S_ALERT_SOURCE_NAMES = frozenset({"kubernetes", "k8s"})
+
+
+def _parse_k8s_paren_tuple(text: str) -> dict:
+    """从 `Unhealthy（kubernetes，cluster，nacos-0）` 提取 cluster 与对象名。
+
+    忽略正文里 ASCII 括号（如 Client.Timeout exceeded ...），只认来源为 kubernetes/k8s 的三段元组。
+    """
+    parsed = {}
+    if not isinstance(text, str) or not text.strip():
+        return parsed
+    for match in _PAREN_GROUP_RE.finditer(text):
+        parts = [part.strip() for part in re.split(r"[,，、/|]", match.group(1)) if part.strip()]
+        if len(parts) < 3 or parts[0].lower() not in _K8S_ALERT_SOURCE_NAMES:
+            continue
+        parsed["cluster"] = parts[1]
+        parsed["pod"] = parts[-1]
+        parsed["resource_name"] = parts[-1]
+        break
+    return parsed
+
+
+def _parse_notification_alert_text(text: str) -> dict:
+    payload = {"source": "notification", "labels": {}, "annotations": {}}
+    title_match = _NOTIFICATION_TITLE_RE.search(text)
+    content_match = _NOTIFICATION_CONTENT_RE.search(text)
+    time_match = _NOTIFICATION_TIME_RE.search(text)
+    payload["title"] = title_match.group(1).strip() if title_match else text.strip().split("\n", 1)[0].strip()
+    if content_match:
+        payload["message"] = content_match.group(1).strip()
+    else:
+        payload["message"] = text.strip()
+    if time_match:
+        payload["firing_time"] = time_match.group(1).strip()
+    payload["_raw_text"] = text
+    return payload
+
+
+def _coerce_alert_payload(alert_payload) -> dict:
+    if isinstance(alert_payload, dict):
+        return dict(alert_payload)
+    if not isinstance(alert_payload, str):
+        return {}
+    text = alert_payload.strip()
+    if not text:
+        return {}
+    if text[0] in "{[":
+        try:
+            loaded = json.loads(text)
+        except Exception:
+            loaded = None
+        if isinstance(loaded, dict):
+            return loaded
+    return _parse_notification_alert_text(text)
+
+
+def _merge_paren_labels(payload: dict) -> dict:
+    labels = dict(payload.get("labels") or {}) if isinstance(payload.get("labels"), dict) else {}
+    blob = "\n".join(str(payload.get(key) or "") for key in ("title", "name", "message", "summary", "detail", "content", "_raw_text"))
+    for key, value in _parse_k8s_paren_tuple(blob).items():
+        if value and not labels.get(key):
+            labels[key] = value
+    payload["labels"] = labels
+    return payload
+
+
+def _normalize_alert_event_payload(alert_payload) -> dict:
+    payload = _merge_paren_labels(_coerce_alert_payload(alert_payload))
+    labels = _extract_labels(payload)
+    annotations = payload.get("annotations") if isinstance(payload.get("annotations"), dict) else {}
+    return {
+        "source": payload.get("source") or "unknown",
+        "alert_id": payload.get("alert_id") or payload.get("id") or "",
+        "title": payload.get("title") or payload.get("name") or "",
+        "message": payload.get("message") or payload.get("summary") or payload.get("content") or payload.get("detail") or "",
+        "severity": payload.get("severity") or payload.get("level") or "unknown",
+        "status": payload.get("status") or "unknown",
+        "firing_time": payload.get("firing_time") or payload.get("startsAt") or payload.get("starts_at"),
+        "labels": labels,
+        "annotations": annotations,
+    }
 
 
 def _guess_resource_name_from_text(*texts: str) -> str | None:
     """从告警标题/正文中猜测 Pod 名（含 ReplicaSet hash 后缀形态）。"""
+    for text in texts:
+        parsed = _parse_k8s_paren_tuple(text) if isinstance(text, str) else {}
+        if parsed.get("pod"):
+            return parsed["pod"]
     for text in texts:
         if not isinstance(text, str) or not text.strip():
             continue
@@ -257,6 +366,109 @@ def _guess_resource_name_from_text(*texts: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def _flat_object_name(labels: dict) -> str | None:
+    """顶层 name：仅在 kind 为 K8s 资源或名字像 Pod 时采用，避免把告警标题当对象名。"""
+    candidate = labels.get("name")
+    if candidate in (None, "", [], {}):
+        return None
+    text = str(candidate).strip()
+    if not text:
+        return None
+    kind = str(labels.get("kind") or labels.get("resource_type") or "").lower()
+    if kind in _K8S_KIND_NAMES:
+        return text
+    if _POD_LIKE_NAME_RE.fullmatch(text):
+        return text
+    return None
+
+
+def _mark_target_conclusive(target: dict, *, lookup_exhausted: bool = False) -> dict:
+    target["resolved"] = False
+    target["conclusive"] = True
+    if lookup_exhausted:
+        target["lookup_exhausted"] = True
+    return target
+
+
+def _parse_k8s_target_payload(content) -> dict | None:
+    payload = content
+    if isinstance(content, str):
+        text = content.strip()
+        if not text or text[0] not in "{[":
+            return None
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return None
+    if isinstance(payload, dict):
+        return payload
+    return None
+
+
+def is_k8s_target_lookup_exhausted(content) -> bool:
+    """反查已终态：对象不可见、标识不足或连接失败，同一参数再调不会变。"""
+    payload = _parse_k8s_target_payload(content)
+    if not payload:
+        return False
+    if payload.get("conclusive") is True or payload.get("lookup_exhausted") is True:
+        return True
+    if payload.get("resolved") is True:
+        return False
+    missing = payload.get("missing_data") or []
+    return "namespace" in missing or "resource_type_or_name" in missing
+
+
+def k8s_target_lookup_exhausted_from_messages(messages) -> bool:
+    for message in reversed(messages or []):
+        name = str(getattr(message, "name", "") or "")
+        if name != K8S_TARGET_RESOLVE_TOOL_NAME:
+            continue
+        return is_k8s_target_lookup_exhausted(getattr(message, "content", None))
+    return False
+
+
+def _alert_resolve_fingerprint(alert: dict, config: RunnableConfig = None) -> str:
+    keys = (
+        "cluster",
+        "kind",
+        "name",
+        "namespace",
+        "pod",
+        "pod_name",
+        "resource_name",
+        "resource_type",
+        "labels",
+        "title",
+        "message",
+        "detail",
+    )
+    slim = {key: (alert or {}).get(key) for key in keys}
+    configurable = _configurable(config)
+    slim["_conn"] = {
+        "instance_id": configurable.get("instance_id"),
+        "instance_name": configurable.get("instance_name"),
+        "has_kubeconfig": bool(configurable.get("kubeconfig_data")),
+        "has_instances": bool(configurable.get("kubernetes_instances")),
+    }
+    return json.dumps(slim, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _resolve_alert_cache(config: RunnableConfig = None) -> dict:
+    """同一线程内缓存反查结果。LangChain invoke 会复制 config，不能只写 configurable。"""
+    configurable = _configurable(config)
+    existing = configurable.get("_k8s_resolve_alert_cache")
+    if isinstance(existing, dict):
+        _resolve_cache_local.entries = existing
+        return existing
+    cache = getattr(_resolve_cache_local, "entries", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        _resolve_cache_local.entries = cache
+    if configurable:
+        configurable["_k8s_resolve_alert_cache"] = cache
+    return cache
 
 
 def _apply_namespace_lookup(target: dict, pods: list, events: list) -> dict:
@@ -295,12 +507,16 @@ def _apply_namespace_lookup(target: dict, pods: list, events: list) -> dict:
         target["missing_data"] = list(dict.fromkeys((target.get("missing_data") or []) + ["namespace"]))
         target["namespace_candidates"] = unique
         target["resolved"] = False
+        target["lookup_exhausted"] = True
+        target["conclusive"] = True
         target["reason"] = f"Multiple namespaces matched resource {resource_name}: {', '.join(unique)}"
     else:
         target["missing_data"] = list(dict.fromkeys((target.get("missing_data") or []) + ["namespace"]))
         if not target.get("reason"):
             target["reason"] = f"Namespace not found for resource {resource_name} via pods/events lookup"
         target["resolved"] = False
+        target["lookup_exhausted"] = True
+        target["conclusive"] = True
 
     return target
 
@@ -309,14 +525,18 @@ def _build_k8s_target_from_alert(alert: dict) -> dict:
     labels = _extract_labels(alert)
     title = alert.get("title") or ""
     message = alert.get("message") or ""
+    detail = alert.get("detail") or ""
+    resource_type_label = str(labels.get("resource_type") or labels.get("kind") or "").lower()
+    flat_name = _flat_object_name(labels)
 
     pod_name = _first_non_empty(
         labels.get("pod"),
         labels.get("pod_name"),
-        labels.get("resource_name") if str(labels.get("resource_type") or "").lower() in ("", "pod") else None,
+        labels.get("resource_name") if resource_type_label in ("", "pod") else None,
+        flat_name if resource_type_label in ("", "pod") else None,
     )
     if not pod_name:
-        pod_name = _guess_resource_name_from_text(title, message)
+        pod_name = _guess_resource_name_from_text(title, message, detail)
 
     target = {
         "cluster": labels.get("cluster") or labels.get("cluster_id"),
@@ -333,22 +553,23 @@ def _build_k8s_target_from_alert(alert: dict) -> dict:
         "reason": None,
     }
 
-    resource_type_label = str(labels.get("resource_type") or labels.get("kind") or "").lower()
     if target["pod_name"] or resource_type_label == "pod":
         target["resource_type"] = "pod"
-        target["resource_name"] = target["pod_name"] or labels.get("resource_name")
+        target["resource_name"] = target["pod_name"] or labels.get("resource_name") or (flat_name if resource_type_label == "pod" else None)
     elif target["node_name"] or resource_type_label == "node":
         target["resource_type"] = "node"
-        target["resource_name"] = target["node_name"] or labels.get("resource_name")
+        target["resource_name"] = target["node_name"] or labels.get("resource_name") or (flat_name if resource_type_label == "node" else None)
     elif target["service_name"] or resource_type_label == "service":
         target["resource_type"] = "service"
-        target["resource_name"] = target["service_name"] or labels.get("resource_name")
+        target["resource_name"] = target["service_name"] or labels.get("resource_name") or (flat_name if resource_type_label == "service" else None)
     elif target["deployment_name"] or resource_type_label == "deployment":
         target["resource_type"] = "deployment"
-        target["resource_name"] = target["deployment_name"] or labels.get("resource_name")
-    elif labels.get("resource_name"):
+        target["resource_name"] = (
+            target["deployment_name"] or labels.get("resource_name") or (flat_name if resource_type_label == "deployment" else None)
+        )
+    elif labels.get("resource_name") or flat_name:
         target["resource_type"] = resource_type_label or "pod"
-        target["resource_name"] = labels.get("resource_name")
+        target["resource_name"] = labels.get("resource_name") or flat_name
         if target["resource_type"] == "pod":
             target["pod_name"] = target["resource_name"]
 
@@ -357,6 +578,7 @@ def _build_k8s_target_from_alert(alert: dict) -> dict:
     elif not target["resource_type"] or not target["resource_name"]:
         target["reason"] = "Missing resource identifier needed to resolve Kubernetes target"
         target["missing_data"].append("resource_type_or_name")
+        _mark_target_conclusive(target)
     elif not target["namespace"]:
         target["missing_data"].append("namespace")
         target["reason"] = "Missing namespace; will attempt pods/events reverse lookup"
@@ -366,40 +588,47 @@ def _build_k8s_target_from_alert(alert: dict) -> dict:
 
 @tool()
 def normalize_alert_event(alert_payload, config: RunnableConfig = None):
-    """标准化 workflow 告警输入结构。"""
-    payload = alert_payload if isinstance(alert_payload, dict) else {}
-    labels = payload.get("labels") if isinstance(payload.get("labels"), dict) else {}
-    annotations = payload.get("annotations") if isinstance(payload.get("annotations"), dict) else {}
-
-    normalized = {
-        "source": payload.get("source") or "unknown",
-        "alert_id": payload.get("alert_id") or payload.get("id") or "",
-        "title": payload.get("title") or payload.get("name") or "",
-        "message": payload.get("message") or payload.get("summary") or "",
-        "severity": payload.get("severity") or payload.get("level") or "unknown",
-        "status": payload.get("status") or "unknown",
-        "firing_time": payload.get("firing_time") or payload.get("startsAt") or payload.get("starts_at"),
-        "labels": labels,
-        "annotations": annotations,
-    }
-    return json.dumps(normalized, ensure_ascii=False)
+    """标准化告警输入。接受结构化 dict 或 BK-Lite 通知纯文本。"""
+    return json.dumps(_normalize_alert_event_payload(alert_payload), ensure_ascii=False)
 
 
 @tool()
 def resolve_k8s_target_from_alert(normalized_alert, config: RunnableConfig = None):
-    """从标准化告警中解析 Kubernetes 目标对象；缺 namespace 时通过 Pod/Events 反查。"""
-    alert = normalized_alert if isinstance(normalized_alert, dict) else {}
+    """从标准化告警解析 K8s 目标；缺 namespace 时反查一次 Pod/Events。
+
+    同一告警参数只应调用一次。返回 resolved=false 且 conclusive/lookup_exhausted 时
+    表示对象当前不可见或标识不足，禁止用相同参数重试。
+    """
     if isinstance(normalized_alert, str):
         try:
-            alert = json.loads(normalized_alert)
+            parsed = json.loads(normalized_alert)
         except Exception:
-            alert = {}
+            parsed = None
+        if isinstance(parsed, dict):
+            alert = parsed
+        else:
+            alert = _parse_notification_alert_text(normalized_alert)
+    elif isinstance(normalized_alert, dict):
+        alert = dict(normalized_alert)
+    else:
+        alert = {}
+    if not isinstance(alert, dict):
+        alert = {}
+    alert = _merge_paren_labels(alert)
 
-    target = _build_k8s_target_from_alert(alert if isinstance(alert, dict) else {})
+    cache = _resolve_alert_cache(config)
+    fingerprint = _alert_resolve_fingerprint(alert, config)
+    cached = cache.get(fingerprint)
+    if isinstance(cached, str) and cached:
+        return cached
+
+    target = _build_k8s_target_from_alert(alert)
 
     connection_error = _cluster_config_error(config)
     if connection_error:
-        return _unresolved_connection_result(target, connection_error)
+        result = _unresolved_connection_result(target, connection_error)
+        cache[fingerprint] = result
+        return result
 
     needs_lookup = bool(target.get("resource_name") or target.get("pod_name")) and not target.get("namespace")
     if needs_lookup:
@@ -409,10 +638,14 @@ def resolve_k8s_target_from_alert(normalized_alert, config: RunnableConfig = Non
             pods_raw = list_kubernetes_pods.invoke({"namespace": None}, config=config)
             events_raw = list_kubernetes_events.invoke({"namespace": None}, config=config)
         except Exception as lookup_exc:
-            return _unresolved_connection_result(target, str(lookup_exc).strip() or type(lookup_exc).__name__)
+            result = _unresolved_connection_result(target, str(lookup_exc).strip() or type(lookup_exc).__name__)
+            cache[fingerprint] = result
+            return result
         lookup_error = _lookup_payload_error(pods_raw) or _lookup_payload_error(events_raw)
         if lookup_error:
-            return _unresolved_connection_result(target, lookup_error)
+            result = _unresolved_connection_result(target, lookup_error)
+            cache[fingerprint] = result
+            return result
         pods = _json_or_raw(pods_raw) or []
         events = _json_or_raw(events_raw) or []
         if not isinstance(pods, list):
@@ -430,8 +663,11 @@ def resolve_k8s_target_from_alert(normalized_alert, config: RunnableConfig = Non
         target["missing_data"] = list(dict.fromkeys((target.get("missing_data") or []) + ["namespace"]))
         if not target.get("reason"):
             target["reason"] = "Missing namespace after pods/events reverse lookup"
+        _mark_target_conclusive(target, lookup_exhausted=True)
 
-    return json.dumps(target, ensure_ascii=False)
+    result = json.dumps(target, ensure_ascii=False)
+    cache[fingerprint] = result
+    return result
 
 
 def _collect_pod_context(target, scope):

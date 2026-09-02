@@ -8,12 +8,49 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-from openai import OpenAI
+from openai import OpenAI, omit
 
 from apps.core.utils.ssrf_validator import SSRFValidator
 from apps.opspilot.metis.llm.chain.entity import BasicLLMRequest
 from apps.opspilot.metis.llm.common.anthropic_capabilities import build_anthropic_runtime_capabilities
 from apps.opspilot.metis.llm.common.anthropic_compatible_adapter import AnthropicCompatibleChatClient, normalize_anthropic_compatible_api_base
+
+# Vendor test uses requests GET /models; chat uses the OpenAI Python SDK
+# (User-Agent OpenAI/Python + X-Stainless-*). Some reverse proxies return
+# 403 "Your request was blocked" for the SDK while curl/Postman still work.
+_OPENAI_COMPAT_USER_AGENT = "curl/8.7.1"
+_OPENAI_SDK_STAINLESS_HEADER_NAMES = (
+    "X-Stainless-Lang",
+    "X-Stainless-Package-Version",
+    "X-Stainless-OS",
+    "X-Stainless-Arch",
+    "X-Stainless-Runtime",
+    "X-Stainless-Runtime-Version",
+    "X-Stainless-Async",
+)
+
+
+def openai_compat_user_agent_headers() -> dict[str, str]:
+    """Public ChatOpenAI headers. Values must be str; langchain rejects omit."""
+    return {"User-Agent": _OPENAI_COMPAT_USER_AGENT}
+
+
+def openai_compat_sdk_headers() -> dict:
+    """Native OpenAI() headers: curl UA and drop SDK fingerprint headers."""
+    return {
+        "User-Agent": _OPENAI_COMPAT_USER_AGENT,
+        **{name: omit for name in _OPENAI_SDK_STAINLESS_HEADER_NAMES},
+    }
+
+
+def _attach_openai_compat_sdk_headers(llm) -> None:
+    """ChatOpenAI cannot take omit in default_headers; patch the wrapped clients."""
+    headers = openai_compat_sdk_headers()
+    for attr in ("root_client", "root_async_client"):
+        client = getattr(llm, attr, None)
+        if client is None or not hasattr(client, "_custom_headers"):
+            continue
+        client._custom_headers = {**client._custom_headers, **headers}
 
 
 def _build_openai_thinking_extra_body(model: str, show_think: bool) -> dict:
@@ -22,10 +59,17 @@ def _build_openai_thinking_extra_body(model: str, show_think: bool) -> dict:
     DeepSeek V4（含 ``deepseek-v4-flash``）默认开启 thinking。官方 API 用
     ``thinking.type``，DashScope 等兼容网关用 ``enable_thinking``；两边都写，
     避免 ``show_think=false`` 时仍默认思考并把旁白打进正文。
+
+    Qwen3 同类：DashScope 认顶层 ``enable_thinking``，vLLM / 本地 OpenAI 兼容
+    服务只认 ``chat_template_kwargs.enable_thinking``。只写顶层字段会被静默忽略，
+    思考占满 ``max_tokens`` 后 ``content`` 为空。
     """
     model_lower = (model or "").lower()
     if "qwen" in model_lower:
-        return {"enable_thinking": show_think}
+        return {
+            "enable_thinking": show_think,
+            "chat_template_kwargs": {"enable_thinking": show_think},
+        }
     if "deepseek" in model_lower:
         return {
             "thinking": {"type": "enabled" if show_think else "disabled"},
@@ -34,6 +78,97 @@ def _build_openai_thinking_extra_body(model: str, show_think: bool) -> dict:
     if "gemma" in model_lower:
         return {"chat_template_kwargs": {"enable_thinking": show_think}}
     return {}
+
+
+def _coerce_optional_int(value):
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_reasoning_tokens(usage):
+    """Read provider reasoning-token counts without dumping usage objects."""
+    if usage is None:
+        return None
+    details = usage.get("completion_tokens_details") if isinstance(usage, dict) else getattr(usage, "completion_tokens_details", None)
+    if isinstance(details, dict):
+        reasoning = _coerce_optional_int(details.get("reasoning_tokens"))
+        if reasoning is not None:
+            return reasoning
+    elif details is not None:
+        reasoning = _coerce_optional_int(getattr(details, "reasoning_tokens", None))
+        if reasoning is not None:
+            return reasoning
+    if isinstance(usage, dict):
+        return _coerce_optional_int(usage.get("reasoning_tokens"))
+    return _coerce_optional_int(getattr(usage, "reasoning_tokens", None))
+
+
+def _isolated_usage_dict(usage) -> dict:
+    if usage is None:
+        return {}
+    if isinstance(usage, dict):
+        prompt_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+        completion_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+    else:
+        prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None) or 0
+        completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None) or 0
+    data = {
+        "prompt_tokens": int(prompt_tokens or 0),
+        "completion_tokens": int(completion_tokens or 0),
+    }
+    reasoning_tokens = _extract_reasoning_tokens(usage)
+    if reasoning_tokens is not None:
+        data["reasoning_tokens"] = reasoning_tokens
+    return data
+
+
+def _message_has_reasoning_content(message) -> bool:
+    if message is None:
+        return False
+    for attr in ("reasoning_content", "reasoning"):
+        raw = getattr(message, attr, None)
+        if isinstance(raw, str) and raw.strip():
+            return True
+    extra = getattr(message, "model_extra", None)
+    if isinstance(extra, dict):
+        for key in ("reasoning_content", "reasoning"):
+            raw = extra.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return True
+    return False
+
+
+def _thinking_extra_body_flags(thinking_body):
+    body = thinking_body or {}
+    enable = body.get("enable_thinking") if "enable_thinking" in body else None
+    if enable is not None:
+        enable = bool(enable)
+    template = body.get("chat_template_kwargs")
+    template_enable = None
+    if isinstance(template, dict) and "enable_thinking" in template:
+        template_enable = bool(template.get("enable_thinking"))
+    return enable, template_enable
+
+
+def _attach_isolated_openai_result(request, *, thinking_body, finish_reason, usage, message, text):
+    thinking_enable, thinking_template_enable = _thinking_extra_body_flags(thinking_body)
+    extra = {
+        **(request.extra_config or {}),
+        "_isolated_finish_reason": finish_reason,
+        "_isolated_output_truncated": str(finish_reason or "").casefold() in {"length", "max_tokens", "max_output_tokens", "token_limit"},
+        "_isolated_thinking_enable": thinking_enable,
+        "_isolated_thinking_template_enable": thinking_template_enable,
+        "_isolated_has_reasoning_content": _message_has_reasoning_content(message),
+        "_isolated_content_chars": len(text or ""),
+    }
+    usage_dict = _isolated_usage_dict(usage)
+    if usage_dict:
+        extra["_isolated_usage"] = usage_dict
+    request.extra_config = extra
 
 
 def _normalize_message_content(content) -> str:
@@ -63,6 +198,33 @@ def _normalize_message_content(content) -> str:
                 parts.append(str(text))
         return "\n".join(part for part in parts if part)
     return str(content)
+
+
+# 部分推理/新一代模型网关只接受 temperature=1。
+_FIXED_UNIT_TEMPERATURE_PREFIXES = ("gpt-5", "o1", "o3", "o4-mini", "kimi", "moonshot", "k3")
+
+
+def _normalize_llm_model_id(model_name: str) -> str:
+    name = str(model_name or "").strip().lower()
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return name
+
+
+def resolve_gateway_temperature(model_name: str, requested: float, vendor_type: str = "") -> float:
+    """Keep the requested temperature unless the gateway only accepts 1."""
+    name = _normalize_llm_model_id(model_name)
+    vendor = str(vendor_type or "").strip().lower()
+    if vendor in {"kimi", "moonshot"}:
+        return 1.0
+    for prefix in _FIXED_UNIT_TEMPERATURE_PREFIXES:
+        if name == prefix or name.startswith(f"{prefix}-") or name.startswith(f"{prefix}."):
+            return 1.0
+    return requested
+
+
+def _request_temperature(request: BasicLLMRequest) -> float:
+    return resolve_gateway_temperature(request.model, request.temperature, getattr(request, "vendor_type", ""))
 
 
 def _is_unsupported_response_format_error(exc) -> bool:
@@ -146,11 +308,13 @@ class LLMClientFactory:
             model=request.model,
             base_url=base_url,
             api_key=request.openai_api_key,
-            temperature=request.temperature,
+            temperature=_request_temperature(request),
             max_tokens=request.max_output_tokens or None,
             disable_streaming=disable_stream,
             timeout=LLMClientFactory._resolve_timeout(request, timeout=timeout),
+            default_headers=openai_compat_user_agent_headers(),
         )
+        _attach_openai_compat_sdk_headers(llm)
 
         if llm.extra_body is None:
             llm.extra_body = {}
@@ -185,7 +349,7 @@ class LLMClientFactory:
             model=request.model,
             anthropic_api_url=base_url,
             api_key=request.openai_api_key,
-            temperature=request.temperature,
+            temperature=_request_temperature(request),
             max_tokens=request.max_output_tokens or 4096,
             disable_streaming=disable_stream,
             timeout=LLMClientFactory._resolve_timeout(request, timeout=timeout),
@@ -218,7 +382,7 @@ class LLMClientFactory:
             model=request.model,
             api_key=request.openai_api_key,
             api_base=base_url,
-            temperature=request.temperature,
+            temperature=_request_temperature(request),
             max_tokens=request.max_output_tokens or 4096,
             disable_streaming=disable_stream,
             timeout=LLMClientFactory._resolve_timeout(request, timeout=timeout),
@@ -249,6 +413,7 @@ class LLMClientFactory:
         kwargs = {
             "api_key": request.openai_api_key,
             "timeout": LLMClientFactory._resolve_timeout(request),
+            "default_headers": openai_compat_sdk_headers(),
         }
         if request.openai_api_base:
             # SSRF 防护：验证 API base URL（宽松模式，允许内网 LLM 服务）
@@ -320,7 +485,7 @@ class LLMClientFactory:
         call_kwargs = {
             "model": request.model,
             "messages": openai_messages,
-            "temperature": request.temperature,
+            "temperature": _request_temperature(request),
         }
         if request.max_output_tokens > 0:
             call_kwargs["max_tokens"] = request.max_output_tokens
@@ -344,29 +509,21 @@ class LLMClientFactory:
             response = client.chat.completions.create(**call_kwargs)
         usage = getattr(response, "usage", None)
         finish_reason = str(getattr(response.choices[0], "finish_reason", "") or "")
-        request.extra_config = {
-            **(request.extra_config or {}),
-            "_isolated_finish_reason": finish_reason,
-            "_isolated_output_truncated": finish_reason.casefold() in {"length", "max_tokens", "max_output_tokens", "token_limit"},
-        }
-        if usage is not None:
-            request.extra_config = {
-                **(request.extra_config or {}),
-                "_isolated_usage": {
-                    "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
-                    "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
-                },
-            }
         message = response.choices[0].message
         text = _normalize_message_content(getattr(message, "content", None))
         if not text:
             refusal = getattr(message, "refusal", None)
             if refusal:
                 text = _normalize_message_content(refusal)
-                request.extra_config = {
-                    **(request.extra_config or {}),
-                    "_isolated_finish_reason": finish_reason or "refusal",
-                }
+                finish_reason = finish_reason or "refusal"
+        _attach_isolated_openai_result(
+            request,
+            thinking_body=thinking_body,
+            finish_reason=finish_reason,
+            usage=usage,
+            message=message,
+            text=text,
+        )
         return text
 
     @staticmethod
@@ -400,7 +557,7 @@ class LLMClientFactory:
         call_kwargs = {
             "model": request.model,
             "messages": anthropic_messages,
-            "temperature": request.temperature,
+            "temperature": _request_temperature(request),
             "max_tokens": request.max_output_tokens or 4096,  # Anthropic 要求必须指定 max_tokens
         }
 
@@ -459,7 +616,7 @@ class LLMClientFactory:
         call_kwargs = {
             "model": request.model,
             "messages": openai_messages,
-            "temperature": request.temperature,
+            "temperature": _request_temperature(request),
             "stream": True,
         }
         if request.max_output_tokens > 0:
@@ -538,7 +695,7 @@ class LLMClientFactory:
         call_kwargs = {
             "model": request.model,
             "messages": anthropic_messages,
-            "temperature": request.temperature,
+            "temperature": _request_temperature(request),
             "max_tokens": request.max_output_tokens or 4096,
         }
         if system_message:

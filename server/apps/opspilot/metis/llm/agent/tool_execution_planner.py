@@ -58,13 +58,16 @@ _MONITOR_CATALOG_HINT = (
     "禁止返回空 steps，不要改去规划 SSH/top/htop。"
 )
 
-# 告警 RCA：缺 namespace 时必须先反查，避免直接规划必填 namespace 的诊断/日志工具。
+# 告警 RCA：缺 namespace 时必须先反查一次；反查收口后禁止重复规划该工具。
 _K8S_NAMESPACE_LOOKUP_HINT = (
     "能力导读：若告警/问题含 Pod 或工作负载名称但未给出 namespace，"
     "第一步必须规划 resolve_k8s_target_from_alert（其会反查命名空间）"
     "或 list_kubernetes_pods / list_kubernetes_events（namespace 留空）完成反查；"
-    "在拿到 namespace 之前，禁止规划 diagnose_kubernetes_pod_issues、"
-    "get_kubernetes_pod_logs、get_resource_events_timeline 等必填 namespace 的工具。"
+    "该工具对同一告警只能调用一次；返回 resolved=false、lookup_exhausted、conclusive 或 namespace 仍为空时，"
+    "禁止再用相同参数重试，也禁止规划 diagnose_kubernetes_pod_issues、"
+    "get_kubernetes_pod_logs、get_resource_events_timeline 等必填 namespace 的工具，"
+    "直接总结「当前集群无法定位该对象」。"
+    "在拿到 namespace 之前，禁止规划上述必填 namespace 的工具。"
 )
 
 _K8S_NAMESPACE_LOOKUP_TOOLS = frozenset(
@@ -83,6 +86,8 @@ _K8S_NAMESPACE_REQUIRED_TOOLS = frozenset(
         "get_resource_events_timeline",
         "describe_kubernetes_resource",
         "get_kubernetes_resource_yaml",
+        "exec_in_pod",
+        "validate_probe_configuration",
     }
 )
 
@@ -151,6 +156,7 @@ def is_context_size_error(exc: BaseException | str) -> bool:
         "maximum context",
         "context window",
         "too many tokens",
+        "llm_context_window_exceeded",
     )
     return any(needle in text for needle in needles)
 
@@ -447,6 +453,35 @@ def enforce_k8s_namespace_lookup_first(
         first_required_idx,
     )
     return ToolExecutionPlan(goal=plan.goal, steps=steps)
+
+
+def drop_k8s_followup_steps_after_unresolved_target(steps: Sequence[ToolExecutionStep]) -> list[ToolExecutionStep]:
+    """反查已收口后，去掉重复反查和仍依赖 namespace 的后续步骤。"""
+    skip = _K8S_NAMESPACE_LOOKUP_TOOLS | _K8S_NAMESPACE_REQUIRED_TOOLS
+    kept: list[ToolExecutionStep] = []
+    for step in steps or []:
+        if any(tool in skip for tool in (step.tools or [])):
+            continue
+        kept.append(step)
+    return kept
+
+
+def merge_replanned_pending_steps(
+    replacement: Sequence[ToolExecutionStep],
+    leftover: Sequence[ToolExecutionStep],
+) -> list[ToolExecutionStep]:
+    """重规划只替换当前失败步；原计划里尚未执行且未被覆盖的后续步继续保留。"""
+    merged = list(replacement or [])
+    covered_tools = {name for step in merged for name in (step.tools or [])}
+    covered_objectives = {step.objective for step in merged}
+    for step in leftover or []:
+        tools = set(step.tools or [])
+        if step.objective in covered_objectives:
+            continue
+        if tools and tools <= covered_tools:
+            continue
+        merged.append(step)
+    return merged
 
 
 def looks_like_attachment_file_task(user_message: str = "", agent_system_prompt: str = "") -> bool:

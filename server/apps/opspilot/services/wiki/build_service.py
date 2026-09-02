@@ -13,9 +13,11 @@ import json_repair
 from django.db import transaction
 
 from apps.core.logger import opspilot_logger as logger
+from apps.core.logger import safe_log_value
 from apps.opspilot.metis.llm.chain.entity import BasicLLMRequest
-from apps.opspilot.metis.llm.common.llm_client_factory import LLMClientFactory
+from apps.opspilot.metis.llm.common.llm_client_factory import LLMClientFactory, resolve_gateway_temperature
 from apps.opspilot.models import BuildRecord, KnowledgePage, LLMModel, PageEvidence, PageVersion, WikiKnowledgeBase
+from apps.opspilot.services.llm_context_budget import derive_llm_working_budget, window_tokens_for_model_id, working_budget_for_model
 from apps.opspilot.services.wiki.cascade_service import cascade
 from apps.opspilot.services.wiki.check_service import create_candidate
 from apps.opspilot.services.wiki.maintenance_errors import humanize_maintenance_error
@@ -28,15 +30,21 @@ _WIKI_LLM_TIMEOUT_SECONDS = 300.0
 _CURRENT_MATERIAL_VERSION = object()
 _EVIDENCE_SNIPPET_CHARS = 500
 _SOURCE_CHUNK_PREVIEW_CHARS = 240
-_MATERIAL_DIRECT_INPUT_TOKENS = 9000
-_MATERIAL_MAP_INPUT_TOKENS = 12000
-_MATERIAL_MAP_SOURCE_TOKENS = 10000
-_MATERIAL_REDUCE_INPUT_TOKENS = 12000
 _MATERIAL_DIRECT_OUTPUT_TOKENS = 6000
 _MATERIAL_MAP_OUTPUT_TOKENS = 2500
 _MATERIAL_REDUCE_OUTPUT_TOKENS = 2500
 _MATERIAL_MAX_REDUCE_ROUNDS = 8
 _PROMPT_SAFETY_TOKENS = 256
+
+
+def _material_window_limits(llm_model_id):
+    window = window_tokens_for_model_id(llm_model_id)
+    primary = derive_llm_working_budget(window, scene_output_default=_MATERIAL_DIRECT_OUTPUT_TOKENS)
+    map_output = derive_llm_working_budget(window, scene_output_default=_MATERIAL_MAP_OUTPUT_TOKENS).output_reserve_tokens
+    reduce_output = derive_llm_working_budget(window, scene_output_default=_MATERIAL_REDUCE_OUTPUT_TOKENS).output_reserve_tokens
+    return primary, map_output, reduce_output
+
+
 _DERIVED_SYSTEM_PAGE_TYPES = frozenset({"index", "overview", "log"})
 _PARSE_LOG_PREVIEW_CHARS = 400
 _WIKI_LLM_TEMPERATURE = 0.0
@@ -87,6 +95,42 @@ class BuildOutputInvalid(ValueError):
     code = "build_output_invalid_json"
 
 
+class MaterialPageGeneration:
+    """Budgeted material generation result; skipped map chunks stay visible to callers."""
+
+    def __init__(self, pages, skipped=None):
+        self.pages = list(pages or [])
+        self.skipped = list(skipped or [])
+
+
+def as_material_page_generation(result):
+    if isinstance(result, MaterialPageGeneration):
+        return result
+    return MaterialPageGeneration(pages=list(result or []), skipped=[])
+
+
+def generation_publish_status(skipped):
+    return "partial" if skipped else "success"
+
+
+def generation_skip_checkpoint(skipped):
+    if not skipped:
+        return {}
+    return {
+        "skipped_count": len(skipped),
+        "skipped_map_stages": [item.get("stage") for item in skipped],
+    }
+
+
+def _map_skip_record(stage, error):
+    return {
+        "code": "wiki_build_llm_skip",
+        "message": "map chunk skipped after empty LLM retry",
+        "stage": str(stage),
+        "error_type": type(error).__name__,
+    }
+
+
 def _wiki_llm_timeout():
     raw_timeout = os.getenv("WIKI_LLM_INVOKE_TIMEOUT") or os.getenv("LLM_INVOKE_TIMEOUT")
     if not raw_timeout:
@@ -96,6 +140,52 @@ def _wiki_llm_timeout():
     except (TypeError, ValueError):
         return _WIKI_LLM_TIMEOUT_SECONDS
     return max(timeout, 1.0)
+
+
+def _normalize_wiki_llm_model_id(model_name):
+    name = str(model_name or "").strip().lower()
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return name
+
+
+def _wiki_llm_log_flag(value):
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return "-"
+
+
+def _log_wiki_llm_invoke(stage, request, result, output_reserve):
+    extra = (getattr(request, "extra_config", None) if request is not None else None) or {}
+    usage = extra.get("_isolated_usage") or {}
+    reasoning_tokens = usage.get("reasoning_tokens")
+    content_chars = extra.get("_isolated_content_chars")
+    if content_chars is None:
+        content_chars = len(result or "")
+    logger.info(
+        "wiki_llm_invoke stage=%s model=%s max_output=%s finish_reason=%s truncated=%s "
+        "content_chars=%s prompt_tokens=%s completion_tokens=%s reasoning_tokens=%s "
+        "has_reasoning=%s thinking_enable=%s thinking_template_enable=%s",
+        stage,
+        safe_log_value(getattr(request, "model", None) or "-"),
+        output_reserve,
+        extra.get("_isolated_finish_reason") or "-",
+        _wiki_llm_log_flag(extra.get("_isolated_output_truncated") is True),
+        content_chars,
+        usage.get("prompt_tokens") or usage.get("input_tokens") or 0,
+        usage.get("completion_tokens") or usage.get("output_tokens") or 0,
+        reasoning_tokens if reasoning_tokens is not None else "-",
+        _wiki_llm_log_flag(extra.get("_isolated_has_reasoning_content") is True),
+        _wiki_llm_log_flag(extra.get("_isolated_thinking_enable")),
+        _wiki_llm_log_flag(extra.get("_isolated_thinking_template_enable")),
+    )
+
+
+def _wiki_llm_temperature(model_name):
+    """Wiki 默认 temperature=0；部分模型网关只接受 1。"""
+    return resolve_gateway_temperature(model_name, _WIKI_LLM_TEMPERATURE)
 
 
 def _invoke_llm(
@@ -117,18 +207,34 @@ def _invoke_llm(
     reservation = None
     request = None
     try:
+        llm = LLMModel.objects.select_related("vendor").get(id=llm_model_id)
+        derived = working_budget_for_model(llm, scene_output_default=output_reserve)
+        output_reserve = derived.output_reserve_tokens
         if budget is not None:
             reservation = budget.ensure_call(
                 stage,
                 prompt,
                 output_reserve=output_reserve,
             )
-        llm = LLMModel.objects.select_related("vendor").get(id=llm_model_id)
+        elif estimate_tokens(prompt) > derived.input_working_tokens:
+            raise WikiBudgetExceeded(
+                "wiki_llm_context_window_exceeded",
+                "单次 Wiki LLM 输入输出超过系统安全上下文上限",
+                details={
+                    "stage": stage,
+                    "input_working_tokens": derived.input_working_tokens,
+                    "context_window_tokens": derived.window_tokens,
+                },
+            )
         vendor_type = ""
         if getattr(llm, "vendor_id", None):
             vendor_type = str(getattr(llm.vendor, "vendor_type", "") or "")
         protocol_type = getattr(llm, "protocol_type", None) or "openai"
-        extra_config = {"timeout": _wiki_llm_timeout()}
+        extra_config = {
+            "timeout": _wiki_llm_timeout(),
+            "input_working_tokens": derived.input_working_tokens,
+            "context_window_tokens": derived.window_tokens,
+        }
         # OpenAI 兼容协议可请求 json_object；网关不支持时由 factory 自动降级。
         if force_json and protocol_type == "openai":
             extra_config["response_format"] = {"type": "json_object"}
@@ -136,7 +242,7 @@ def _invoke_llm(
             openai_api_base=llm.openai_api_base,
             openai_api_key=llm.openai_api_key,
             model=llm.model_name,
-            temperature=_WIKI_LLM_TEMPERATURE,
+            temperature=_wiki_llm_temperature(llm.model_name),
             user_message=prompt,
             max_output_tokens=output_reserve,
             protocol_type=protocol_type,
@@ -150,6 +256,7 @@ def _invoke_llm(
         if not isinstance(result, str):
             result = "" if result is None else str(result)
         result = result.strip()
+        _log_wiki_llm_invoke(stage, request, result, output_reserve)
         if budget is not None:
             budget.record_call(
                 reservation,
@@ -181,7 +288,8 @@ def _llm_extract_facts(text, llm_model_id):
     """Stage1:从资料全文分块抽取结构化要点(每行一条事实)。"""
     if not llm_model_id or not (text or "").strip():
         return ""
-    chunks = _split_text_for_llm(text)
+    primary, _, _ = _material_window_limits(llm_model_id)
+    chunks = split_text_by_estimated_tokens(text, max_tokens=primary.build_chunk_tokens)
     facts = []
     for idx, chunk in enumerate(chunks, start=1):
         prompt = (
@@ -755,7 +863,8 @@ def _llm_generate_pages(
     directory_context = _directory_prompt_context(structure_revision, classification_root_id)
     page_contract = _generation_page_contract(structure_revision, source_metadata)
     source_context = json.dumps(_prompt_source_metadata(source_metadata), ensure_ascii=False, sort_keys=True)
-    chunks = _split_text_for_llm(source_text)
+    primary, _, _ = _material_window_limits(llm_model_id)
+    chunks = split_text_by_estimated_tokens(source_text, max_tokens=primary.build_chunk_tokens)
     existing_catalog = json.dumps(
         [
             {"id": page.id, "title": page.title, "page_type": page.page_type}
@@ -947,8 +1056,9 @@ def _compact_mapped_outputs(
             )
 
         empty_prompt = _material_compact_prompt("", round_index, 99999, 99999)
+        primary, _map_output, reduce_output = _material_window_limits(llm_model_id)
         compact_source_limit = _source_token_limit(
-            _MATERIAL_REDUCE_INPUT_TOKENS,
+            primary.input_working_tokens,
             empty_prompt,
         )
         groups = _group_reduce_items(current, compact_source_limit)
@@ -961,18 +1071,16 @@ def _compact_mapped_outputs(
                 group_index,
                 len(groups),
             )
-            try:
-                output = _invoke_llm(
-                    llm_model_id,
-                    prompt,
-                    budget=budget,
-                    stage=f"material_reduce_compact_{round_index}_{group_index}",
-                    output_reserve=_MATERIAL_REDUCE_OUTPUT_TOKENS,
-                    force_json=True,
-                ).strip()
-            except WikiBudgetExceeded as error:
-                _attach_map_checkpoint(error, current, chunk_count)
-                raise
+            output = _invoke_llm_retryable(
+                llm_model_id,
+                prompt,
+                budget=budget,
+                stage=f"material_reduce_compact_{round_index}_{group_index}",
+                output_reserve=reduce_output,
+                force_json=True,
+                on_budget_exceeded=lambda error: _attach_map_checkpoint(error, current, chunk_count),
+                skip_after_retry=False,
+            )
             if output:
                 compacted.append(output)
 
@@ -997,6 +1105,64 @@ def _compact_mapped_outputs(
 def _is_retryable_build_output_error(error):
     message = str(error or "")
     return any(marker in message for marker in _RETRYABLE_BUILD_OUTPUT_MARKERS)
+
+
+def _invoke_llm_retryable(
+    llm_model_id,
+    prompt,
+    *,
+    budget,
+    stage,
+    output_reserve,
+    force_json=False,
+    on_budget_exceeded=None,
+    skip_after_retry=False,
+    skipped=None,
+):
+    """Retry once on retryable empty/invalid LLM output.
+
+    Map may skip the chunk after the last attempt; compact must raise instead.
+    """
+
+    for attempt in range(1, _GENERATE_OUTPUT_MAX_ATTEMPTS + 1):
+        attempt_stage = stage if attempt == 1 else f"{stage}_retry_{attempt}"
+        try:
+            return _invoke_llm(
+                llm_model_id,
+                prompt,
+                budget=budget,
+                stage=attempt_stage,
+                output_reserve=output_reserve,
+                force_json=force_json,
+            ).strip()
+        except WikiBudgetExceeded as error:
+            if on_budget_exceeded is not None:
+                on_budget_exceeded(error)
+            raise
+        except BuildOutputInvalid as exc:
+            if not _is_retryable_build_output_error(exc):
+                raise
+            if attempt >= _GENERATE_OUTPUT_MAX_ATTEMPTS:
+                if not skip_after_retry:
+                    raise
+                logger.warning(
+                    "wiki_build_llm_skip stage=%s attempt=%s/%s error_type=%s",
+                    stage,
+                    attempt,
+                    _GENERATE_OUTPUT_MAX_ATTEMPTS,
+                    type(exc).__name__,
+                )
+                if skipped is not None:
+                    skipped.append(_map_skip_record(stage, exc))
+                return ""
+            logger.warning(
+                "wiki_build_llm_retry stage=%s attempt=%s/%s error_type=%s",
+                stage,
+                attempt,
+                _GENERATE_OUTPUT_MAX_ATTEMPTS,
+                type(exc).__name__,
+            )
+    return ""
 
 
 def _retry_correction_prompt(base_prompt, error):
@@ -1087,11 +1253,24 @@ def generate_material_pages_with_budget(
     """
 
     source = (text or "").strip()
+    skipped = []
+
+    def _finish(pages):
+        if skipped:
+            logger.info(
+                "wiki_build_llm_skipped kb=%s skipped=%s stages=%s",
+                getattr(kb, "pk", None) or getattr(kb, "id", None),
+                len(skipped),
+                ",".join(item.get("stage") or "-" for item in skipped),
+            )
+        return MaterialPageGeneration(pages=pages, skipped=skipped)
+
     if not source or not llm_model_id:
         if source_metadata is not None:
             raise BuildOutputInvalid("build_output_empty_pages: 资料缺少可构建正文或可用模型")
-        return []
+        return _finish([])
 
+    primary, map_output, _reduce_output = _material_window_limits(llm_model_id)
     empty_generation_prompt = _bounded_generation_prompt(
         kb,
         "",
@@ -1100,7 +1279,7 @@ def generate_material_pages_with_budget(
         source_metadata=source_metadata,
     )
     final_source_limit = _source_token_limit(
-        _MATERIAL_DIRECT_INPUT_TOKENS,
+        primary.input_working_tokens,
         empty_generation_prompt,
     )
     if estimate_tokens(source) <= final_source_limit:
@@ -1111,26 +1290,28 @@ def generate_material_pages_with_budget(
             classification_root_id=classification_root_id,
             source_metadata=source_metadata,
         )
-        return _generate_and_finalize_pages(
-            llm_model_id=llm_model_id,
-            prompt=prompt,
-            budget=budget,
-            stage="material_generate",
-            output_reserve=_MATERIAL_DIRECT_OUTPUT_TOKENS,
-            kb=kb,
-            structure_revision=structure_revision,
-            source_metadata=source_metadata,
-            source_text=source,
+        return _finish(
+            _generate_and_finalize_pages(
+                llm_model_id=llm_model_id,
+                prompt=prompt,
+                budget=budget,
+                stage="material_generate",
+                output_reserve=primary.output_reserve_tokens,
+                kb=kb,
+                structure_revision=structure_revision,
+                source_metadata=source_metadata,
+                source_text=source,
+            )
         )
 
     empty_map_prompt = _material_map_prompt("", 99999, 99999)
     map_source_limit = _source_token_limit(
-        _MATERIAL_MAP_INPUT_TOKENS,
+        primary.input_working_tokens,
         empty_map_prompt,
     )
     # Keep semantic source windows stable when prompt wording changes. Context
     # safety is still enforced above; this cap is based on source size alone.
-    map_source_limit = min(map_source_limit, _MATERIAL_MAP_SOURCE_TOKENS)
+    map_source_limit = min(map_source_limit, primary.build_chunk_tokens)
     chunks = split_text_by_estimated_tokens(
         source,
         max_tokens=map_source_limit,
@@ -1138,27 +1319,28 @@ def generate_material_pages_with_budget(
     mapped = []
     for index, chunk in enumerate(chunks, start=1):
         prompt = _material_map_prompt(chunk, index, len(chunks))
-        try:
-            output = _invoke_llm(
-                llm_model_id,
-                prompt,
-                budget=budget,
-                stage=f"material_map_{index}",
-                output_reserve=_MATERIAL_MAP_OUTPUT_TOKENS,
-                force_json=True,
-            ).strip()
-        except WikiBudgetExceeded as error:
-            _attach_map_checkpoint(error, mapped, len(chunks))
-            raise
+        output = _invoke_llm_retryable(
+            llm_model_id,
+            prompt,
+            budget=budget,
+            stage=f"material_map_{index}",
+            output_reserve=map_output,
+            force_json=True,
+            on_budget_exceeded=lambda error, mapped=mapped, chunk_count=len(chunks): _attach_map_checkpoint(error, mapped, chunk_count),
+            skip_after_retry=True,
+            skipped=skipped,
+        )
         if output:
             mapped.append(output)
     if not mapped:
-        return _finalize_material_pages(
-            [],
-            kb=kb,
-            structure_revision=structure_revision,
-            source_metadata=source_metadata,
-            source_text=source,
+        return _finish(
+            _finalize_material_pages(
+                [],
+                kb=kb,
+                structure_revision=structure_revision,
+                source_metadata=source_metadata,
+                source_text=source,
+            )
         )
 
     mapped = _compact_mapped_outputs(
@@ -1169,12 +1351,14 @@ def generate_material_pages_with_budget(
         chunk_count=len(chunks),
     )
     if not mapped:
-        return _finalize_material_pages(
-            [],
-            kb=kb,
-            structure_revision=structure_revision,
-            source_metadata=source_metadata,
-            source_text=source,
+        return _finish(
+            _finalize_material_pages(
+                [],
+                kb=kb,
+                structure_revision=structure_revision,
+                source_metadata=source_metadata,
+                source_text=source,
+            )
         )
 
     prompt = _bounded_generation_prompt(
@@ -1185,16 +1369,18 @@ def generate_material_pages_with_budget(
         source_metadata=source_metadata,
     )
     try:
-        return _generate_and_finalize_pages(
-            llm_model_id=llm_model_id,
-            prompt=prompt,
-            budget=budget,
-            stage="material_reduce_generate",
-            output_reserve=_MATERIAL_DIRECT_OUTPUT_TOKENS,
-            kb=kb,
-            structure_revision=structure_revision,
-            source_metadata=source_metadata,
-            source_text=source,
+        return _finish(
+            _generate_and_finalize_pages(
+                llm_model_id=llm_model_id,
+                prompt=prompt,
+                budget=budget,
+                stage="material_reduce_generate",
+                output_reserve=primary.output_reserve_tokens,
+                kb=kb,
+                structure_revision=structure_revision,
+                source_metadata=source_metadata,
+                source_text=source,
+            )
         )
     except WikiBudgetExceeded as error:
         _attach_map_checkpoint(error, mapped, len(chunks))

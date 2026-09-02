@@ -278,6 +278,41 @@ def test_llm_factory_public_isolated_invocation_routes_protocol(monkeypatch, pro
     assert LLMClientFactory.invoke_isolated(request, ["answer"]) == "answer"
 
 
+@pytest.mark.parametrize(
+    ("model_name", "requested", "vendor_type", "expected"),
+    [
+        ("gpt-4o", 0.2, "", 0.2),
+        ("o10", 0.2, "", 0.2),
+        ("kimi-k2", 0.2, "", 1.0),
+        ("kimi-for-coding", 0.2, "", 1.0),
+        ("kimi-for-coding-highspeed", 0.2, "", 1.0),
+        ("k3", 0.2, "", 1.0),
+        ("k3-256k", 0.2, "", 1.0),
+        ("moonshot/kimi-k2", 0.2, "", 1.0),
+        ("moonshot-v1-128k", 0.2, "", 1.0),
+        ("custom-k2", 0.2, "moonshot", 1.0),
+        ("gpt-5-mini", 0.2, "", 1.0),
+    ],
+)
+def test_resolve_gateway_temperature_for_unit_only_models(model_name, requested, vendor_type, expected):
+    from apps.opspilot.metis.llm.common.llm_client_factory import resolve_gateway_temperature
+
+    assert resolve_gateway_temperature(model_name, requested, vendor_type) == expected
+
+
+def test_isolated_openai_uses_unit_temperature_for_kimi(monkeypatch):
+    calls = {}
+    completion = SimpleNamespace(
+        create=lambda **kwargs: (calls.update(kwargs) or SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]))
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completion))
+    monkeypatch.setattr(LLMClientFactory, "_create_isolated_openai_client", lambda _request: client)
+    request = BasicLLMRequest(model="kimi-k2", temperature=0.2)
+
+    assert LLMClientFactory._invoke_isolated_openai(request, [HumanMessage(content="hello")]) == "ok"
+    assert calls["temperature"] == 1.0
+
+
 def test_isolated_openai_invocation_converts_mixed_messages(monkeypatch):
     create = pytest.MonkeyPatch()
     calls = {}
@@ -301,7 +336,10 @@ def test_isolated_openai_invocation_converts_mixed_messages(monkeypatch):
         {"role": "user", "content": "world"},
         {"role": "assistant", "content": "prior"},
     ]
-    assert calls["extra_body"] == {"enable_thinking": False}
+    assert calls["extra_body"] == {
+        "enable_thinking": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
     create.undo()
 
 
@@ -325,6 +363,48 @@ def test_isolated_openai_normalizes_none_and_part_list_content(monkeypatch):
     monkeypatch.setattr(LLMClientFactory, "_create_isolated_openai_client", lambda _request: client)
     assert LLMClientFactory._invoke_isolated_openai(request, [{"role": "user", "content": "hi"}]) == ""
     assert request.extra_config["_isolated_finish_reason"] == "stop"
+    assert request.extra_config["_isolated_thinking_enable"] is None
+    assert request.extra_config["_isolated_has_reasoning_content"] is False
+
+
+def test_isolated_openai_records_qwen_thinking_flags_and_reasoning_usage(monkeypatch):
+    reasoning_body = "SECRET_REASONING_BODY"
+    request = BasicLLMRequest(model="qwen3.8-27b", temperature=0.0, max_output_tokens=2000)
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(
+                    usage=SimpleNamespace(
+                        prompt_tokens=100,
+                        completion_tokens=2000,
+                        completion_tokens_details=SimpleNamespace(reasoning_tokens=1988),
+                    ),
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="length",
+                            message=SimpleNamespace(content=None, reasoning_content=reasoning_body, refusal=None),
+                        )
+                    ],
+                )
+            )
+        )
+    )
+    monkeypatch.setattr(LLMClientFactory, "_create_isolated_openai_client", lambda _request: client)
+
+    assert LLMClientFactory._invoke_isolated_openai(request, [{"role": "user", "content": "hi"}]) == ""
+    extra = request.extra_config
+    assert extra["_isolated_finish_reason"] == "length"
+    assert extra["_isolated_output_truncated"] is True
+    assert extra["_isolated_thinking_enable"] is False
+    assert extra["_isolated_thinking_template_enable"] is False
+    assert extra["_isolated_has_reasoning_content"] is True
+    assert extra["_isolated_content_chars"] == 0
+    assert extra["_isolated_usage"] == {
+        "prompt_tokens": 100,
+        "completion_tokens": 2000,
+        "reasoning_tokens": 1988,
+    }
+    assert reasoning_body not in str(extra)
 
 
 def test_isolated_anthropic_invocation_separates_system_message(monkeypatch):
