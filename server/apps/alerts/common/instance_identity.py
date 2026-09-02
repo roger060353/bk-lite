@@ -7,8 +7,7 @@ resource_*、labels、tags、raw_data 回读。不新增表字段，避免本切
 from __future__ import annotations
 
 from typing import Any
-
-from apps.cmdb.services.instance_identity import optional_inst_uuid
+from uuid import UUID
 
 LABEL_INST_UUID = "inst_uuid"
 LABEL_MODEL = "model"
@@ -24,6 +23,19 @@ _FORBIDDEN_LABEL_FRAGMENTS = (
     "authorization",
     "private_key",
 )
+
+
+def optional_inst_uuid(value: object) -> str:
+    """合法 UUIDv4 则返回规范字符串，否则空串。不抛、不记 ERROR。"""
+    if value in (None, ""):
+        return ""
+    try:
+        parsed = UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    if parsed.version != 4:
+        return ""
+    return str(parsed)
 
 
 def normalize_model_id(value: object) -> str:
@@ -79,7 +91,6 @@ def extract_instance_identity(obj: Any) -> dict[str, Any]:
         optional_inst_uuid(labels.get(LABEL_INST_UUID))
         or optional_inst_uuid(raw_data.get(LABEL_INST_UUID))
         or optional_inst_uuid(getattr(obj, "resource_id", None))
-        or ""
     )
     model = (
         normalize_model_id(labels.get(LABEL_MODEL))

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from apps.cmdb.services.instance_identity import optional_inst_uuid
+from apps.alerts.common.instance_identity import optional_inst_uuid
 from apps.monitor.services.module_ingest import CMDB_MODEL_TO_MONITOR_OBJECT
 
 # 监控对象名 → CMDB model_id。未命中返回空串，禁止回落 host。
@@ -43,4 +43,4 @@ def resolve_alert_cmdb_model(monitor_object_name: str | None) -> str:
 
 def normalize_monitor_inst_uuid(cmdb_id: object) -> str:
     """仅接受规范 UUIDv4；旧数字图 ID 不得充当跨模块 inst_uuid。"""
-    return optional_inst_uuid(cmdb_id) or ""
+    return optional_inst_uuid(cmdb_id)

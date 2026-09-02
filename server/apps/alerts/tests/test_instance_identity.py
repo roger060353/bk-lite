@@ -10,6 +10,7 @@ from apps.alerts.common.instance_identity import (
     LABEL_ORIGINAL_LABELS,
     extract_instance_identity,
     merge_stable_identity_labels,
+    optional_inst_uuid,
     sanitize_original_labels,
 )
 from apps.alerts.serializers.alert import AlertModelSerializer
@@ -47,6 +48,14 @@ def test_extract_prefers_labels_then_resource_uuid():
     assert identity[LABEL_INST_UUID] == INST_UUID
     assert identity[LABEL_MODEL] == "mysql"
     assert identity[LABEL_ORIGINAL_LABELS] == {"env": "prod"}
+
+
+@pytest.mark.unit
+def test_optional_inst_uuid_is_silent_for_legacy_numeric_and_invalid():
+    assert optional_inst_uuid(INST_UUID.upper()) == INST_UUID
+    assert optional_inst_uuid("1704") == ""
+    assert optional_inst_uuid("not-a-uuid") == ""
+    assert optional_inst_uuid(None) == ""
 
 
 @pytest.mark.unit
