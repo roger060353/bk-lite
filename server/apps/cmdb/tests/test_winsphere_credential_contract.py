@@ -379,8 +379,10 @@ def test_winsphere_password_is_encrypted_at_rest_and_masked_in_api():
     )
     task.refresh_from_db()
 
-    assert task.credential[0]["password"].startswith("enc:")
-    assert "plain-secret" not in task.credential[0]["password"]
+    assert task.credential[0].get("password") in (None, "")
+    assert task.credential[0].get("system_credential_id")
+    assert "plain-secret" not in str(task.credential)
+    assert task.decrypt_credentials[0]["password"] == "plain-secret"
 
     request = SimpleNamespace(user=SimpleNamespace(group_list=[]), COOKIES={})
     representation = CollectModelSerializer(

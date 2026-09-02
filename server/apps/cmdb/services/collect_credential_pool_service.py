@@ -43,6 +43,11 @@ class CollectCredentialPoolService:
             if not isinstance(item, dict):
                 raise BaseAppException("采集凭据格式错误！")
 
+        from apps.cmdb.services.collect_credential_reference import is_id_only_item
+
+        if all(is_id_only_item(item) for item in pool):
+            return
+
         # 仅 SNMP：凭据自带 version 字段（SSH/数据库/云等均不含），按各自版本校验必填项，
         # 允许 v2/v2c/v3 在同一任务内混用；其他采集类型维持原"字段结构一致"约束不变。
         if all(item.get("version") for item in pool):
@@ -52,7 +57,7 @@ class CollectCredentialPoolService:
 
         expected_keys = None
         for item in pool:
-            item_keys = set(item.keys()) - {"credential_id", "credential_version"}
+            item_keys = set(item.keys()) - {"credential_id", "credential_version", "system_credential_id"}
             if expected_keys is None:
                 expected_keys = item_keys
                 continue
@@ -82,12 +87,12 @@ class CollectCredentialPoolService:
     def diff_pool(old_pool, new_pool):
         """返回 (added_ids, removed_ids, edited_ids)，排序变化不算编辑。"""
         old_map = {
-            item.get("credential_id"): {k: v for k, v in item.items() if k not in {"credential_id", "credential_version"}}
+            item.get("credential_id"): {k: v for k, v in item.items() if k not in {"credential_id", "credential_version", "system_credential_id"}}
             for item in old_pool
             if isinstance(item, dict) and item.get("credential_id")
         }
         new_map = {
-            item.get("credential_id"): {k: v for k, v in item.items() if k not in {"credential_id", "credential_version"}}
+            item.get("credential_id"): {k: v for k, v in item.items() if k not in {"credential_id", "credential_version", "system_credential_id"}}
             for item in new_pool
             if isinstance(item, dict) and item.get("credential_id")
         }
@@ -130,6 +135,7 @@ class CollectCredentialPoolService:
         primary = copy.deepcopy(pool[0])
         primary.pop("credential_id", None)
         primary.pop("credential_version", None)
+        primary.pop("system_credential_id", None)
         return primary
 
     @staticmethod

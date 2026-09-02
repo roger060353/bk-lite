@@ -28,13 +28,14 @@ def test_scan_task_encrypts_credentials_per_family_on_save():
         },
     )
     task.refresh_from_db()
-    mysql_password = task.credentials["mysql"][0]["password"]
-    community = task.credentials["network"][0]["community"]
-    assert mysql_password.startswith("enc:")
-    assert mysql_password != "db-secret"
-    assert community.startswith("enc:")
-    assert community != "public"
-    assert task.credentials["mysql"][0]["username"] == "monitor"
+    mysql_item = task.credentials["mysql"][0]
+    network_item = task.credentials["network"][0]
+    assert mysql_item.get("password") in (None, "")
+    assert network_item.get("community") in (None, "")
+    assert mysql_item.get("system_credential_id")
+    assert network_item.get("system_credential_id")
+    assert mysql_item["credential_id"] == "cred-db"
+    assert task.decrypt_credentials["mysql"][0]["username"] == "monitor"
 
 
 def test_scan_task_decrypt_credentials_returns_plaintext_per_family():
@@ -49,7 +50,8 @@ def test_scan_task_decrypt_credentials_returns_plaintext_per_family():
     decrypted = task.decrypt_credentials
     assert decrypted["mysql"][0]["password"] == "db-secret"
     assert decrypted["mysql"][0]["username"] == "monitor"
-    assert task.credentials["mysql"][0]["password"].startswith("enc:")
+    assert task.credentials["mysql"][0].get("password") in (None, "")
+    assert task.credentials["mysql"][0].get("system_credential_id")
 
 
 def test_scan_execution_and_hit_can_be_created():

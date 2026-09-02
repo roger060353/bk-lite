@@ -3,8 +3,6 @@
 # @Time: 2025/2/27 14:04
 # @Author: windyzhao
 
-import copy
-
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import JSONField
@@ -17,7 +15,6 @@ from apps.cmdb.constants.constants import (
     CollectRunStatusType,
     DataCleanupStrategy,
 )
-from apps.cmdb.services.encrypt_collect_password import get_collect_model_passwords
 from apps.core.models.maintainer_info import MaintainerInfo
 from apps.core.models.time_info import TimeInfo
 from apps.core.utils.crypto.password_crypto import PasswordCrypto
@@ -299,54 +296,32 @@ class CollectModels(MaintainerInfo, TimeInfo):
     @property
     def decrypt_credentials(self):
         """
-        解密凭据中的密码字段
-        :return: 解密后的凭据列表
-        {"port": "22", "password": "password", "username": "admin"}
+        解析凭据：系统管理 ID 引用优先，旧嵌套密码只读兼容一版。
         """
         if not self.credential:
             return self.credential
 
-        encrypted_fields = get_collect_model_passwords(collect_model_id=self.model_id, driver_type=self.driver_type)
+        from apps.cmdb.services.collect_credential_reference import resolve_collect_credential
 
-        def decrypt_item(raw_item):
-            item = copy.deepcopy(raw_item)
-            if not isinstance(item, dict):
-                return item
-            for encrypted_field in encrypted_fields:
-                password = item.get(encrypted_field)
-                if not password:
-                    continue
-                item[encrypted_field] = self.decrypt_password(password)
-            return item
-
-        if isinstance(self.credential, list):
-            return [decrypt_item(item) for item in self.credential]
-        if isinstance(self.credential, dict):
-            return decrypt_item(self.credential)
-        return self.credential
+        return resolve_collect_credential(self.credential, model_id=self.model_id, driver_type=self.driver_type)
 
     def save(self, *args, **kwargs):
-        # 只有在密码未加密时才进行加密
         if self.credential:
-            encrypted_fields = get_collect_model_passwords(collect_model_id=self.model_id, driver_type=self.driver_type)
+            from apps.cmdb.services.collect_credential_reference import persist_collect_credential
 
-            def encrypt_item(raw_item):
-                if not isinstance(raw_item, dict):
-                    return raw_item
-                item = copy.deepcopy(raw_item)
-                for encrypted_field in encrypted_fields:
-                    password = item.get(encrypted_field)
-                    if not password:
-                        continue
-                    if isinstance(password, str) and password.startswith(ENCRYPTED_PREFIX):
-                        continue
-                    item[encrypted_field] = self.encrypt_password(password)
-                return item
-
-            if isinstance(self.credential, list):
-                self.credential = [encrypt_item(item) for item in self.credential]
-            elif isinstance(self.credential, dict):
-                self.credential = encrypt_item(self.credential)
+            persisted = persist_collect_credential(
+                self.credential,
+                name=self.name or self.model_id or "collect",
+                credential_type=self.model_id or "collect",
+                team=self.team,
+                operator=self.updated_by or self.created_by,
+                driver_type=self.driver_type,
+            )
+            if persisted != self.credential:
+                self.credential = persisted
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None:
+                    kwargs["update_fields"] = list(set(update_fields) | {"credential"})
         super().save(*args, **kwargs)
 
 

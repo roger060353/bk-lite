@@ -1,4 +1,5 @@
 from .channel_serializer import ChannelSerializer  # noqa
+from .connection_credential_serializer import ConnectionCredentialListSerializer, ConnectionCredentialSerializer  # noqa
 from .group_data_rule_serializer import GroupDataRuleSerializer  # noqa
 from .im_notification_channel_serializer import IMNotificationChannelSerializer  # noqa
 from .integration_instance_serializer import IntegrationInstanceSerializer  # noqa

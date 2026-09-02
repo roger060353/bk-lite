@@ -11,7 +11,6 @@ from apps.cmdb.models.public_enum_library import PublicEnumLibrary
 from apps.cmdb.models.subscription_rule import SubscriptionRule
 from apps.cmdb.models.user_personal_config import UserPersonalConfig
 
-
 # --------------------------------------------------------------------------
 # CollectModels 密码加解密（不依赖 DB）
 # --------------------------------------------------------------------------
@@ -68,7 +67,9 @@ def test_collect_model_type_flags():
 
 def test_collect_model_info_property():
     m = CollectModels(
-        task_type="host", driver_type="x", params={},
+        task_type="host",
+        driver_type="x",
+        params={},
         format_data={"add": [1, 2], "update": [3], "delete": [], "association": [4], "__raw_data__": [5, 6, 7]},
     )
     info = m.info
@@ -173,12 +174,16 @@ def test_collect_model_save_encrypts_credential(monkeypatch):
         lambda collect_model_id, driver_type: ["password"],
     )
     m = CollectModels.objects.create(
-        name="t", task_type="host", driver_type="job", model_id="host",
-        cycle_value_type="cron", params={}, format_data={},
+        name="t",
+        task_type="host",
+        driver_type="job",
+        model_id="host",
+        cycle_value_type="cron",
+        params={},
+        format_data={},
         credential={"username": "admin", "password": "secret"},
     )
     m.refresh_from_db()
-    # 密码已加密存储
-    assert m.credential["password"] != "secret"
-    # 解密可还原
-    assert CollectModels.decrypt_password(m.credential["password"]) == "secret"
+    assert m.credential.get("password") in (None, "")
+    assert m.credential.get("system_credential_id")
+    assert m.decrypt_credentials["password"] == "secret"

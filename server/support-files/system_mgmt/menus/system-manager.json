@@ -204,6 +204,16 @@
             "Edit",
             "Delete"
           ]
+        },
+        {
+          "id": "connection_credential",
+          "name": "Connection Credentials",
+          "operation": [
+            "View",
+            "Add",
+            "Edit",
+            "Delete"
+          ]
         }
       ]
     }

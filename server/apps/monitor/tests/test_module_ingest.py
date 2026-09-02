@@ -1596,3 +1596,19 @@ def test_allow_credential_create_without_named_plugin_does_not_create_shell(host
 
     mock_collect_apply.assert_not_called()
     assert MonitorInstance.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_extract_credential_resolves_system_mgmt_id():
+    from apps.system_mgmt.services.connection_credential_service import ConnectionCredentialService
+
+    stored = ConnectionCredentialService.create(
+        name="monitor-ssh",
+        credential_type="host",
+        team=[1],
+        payload={"username": "root", "password": "store-secret"},
+    )
+    extracted = MonitorModuleIngestService._extract_credential({"credential": {"credential_id": str(stored.id)}})
+    assert extracted["username"] == "root"
+    assert extracted["password"] == "store-secret"
+    assert extracted["credential_id"] == str(stored.id)

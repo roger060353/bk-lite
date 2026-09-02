@@ -287,8 +287,15 @@ class CollectModelSerializer(AuthSerializer):
         params.update(normalize_topology_contract(params))
         return params
 
+    def _credential_is_id_only(self, attrs):
+        from apps.cmdb.services.collect_credential_reference import is_id_only_pool
+
+        return is_id_only_pool(self._get_attr_or_instance_value(attrs, "credential"))
+
     def _reject_masked_secrets_on_create(self, attrs, model_id):
         if self.instance is not None:
+            return
+        if self._credential_is_id_only(attrs):
             return
 
         raw_credential = self._get_attr_or_instance_value(attrs, "credential")
@@ -337,6 +344,8 @@ class CollectModelSerializer(AuthSerializer):
         credential = credential_pool[0]
         allowed_fields = {
             "credential_id",
+            "system_credential_id",
+            "credential_version",
             "scheme",
             "port",
             "verify_tls",
@@ -419,6 +428,8 @@ class CollectModelSerializer(AuthSerializer):
             credential["password"] = legacy_password
         allowed_fields = {
             "credential_id",
+            "system_credential_id",
+            "credential_version",
             "username",
             "password",
             "port",
@@ -473,7 +484,17 @@ class CollectModelSerializer(AuthSerializer):
             raise serializers.ValidationError({"credential": err.errors}) from err
 
     def _normalize_winsphere_instances(self, attrs):
-        credential = attrs["credential"][0]
+        raw_credential = attrs.get("credential") or self._get_attr_or_instance_value(attrs, "credential")
+        if isinstance(raw_credential, list) and raw_credential:
+            credential = raw_credential[0]
+        elif isinstance(raw_credential, dict):
+            credential = raw_credential
+        else:
+            credential = {}
+        if "https_port" not in credential:
+            from apps.cmdb.services.collect_credential_reference import resolve_item
+
+            credential = resolve_item(credential, model_id="winsphere")
         https_port = credential["https_port"]
         if self._get_attr_or_instance_value(attrs, "ip_range"):
             raise serializers.ValidationError({"ip_range": "WinSphere 任务不支持 IP 范围"})
@@ -526,14 +547,15 @@ class CollectModelSerializer(AuthSerializer):
         ):
             raise serializers.ValidationError({"model_id": "当前版本未启用该采集能力"})
         self._reject_masked_secrets_on_create(attrs, model_id)
-        if credential_contract:
-            self._validate_registered_credential(attrs, model_id)
-        elif model_id == "influxdb":
-            self._validate_influxdb_credential(attrs)
-        elif model_id == "hwcloud":
-            self._validate_hwcloud_credential(attrs)
-        elif model_id in {"fusioninsight", "storage", "sangforhci"}:
-            self._validate_platform_api_credential(attrs)
+        if not self._credential_is_id_only(attrs):
+            if credential_contract:
+                self._validate_registered_credential(attrs, model_id)
+            elif model_id == "influxdb":
+                self._validate_influxdb_credential(attrs)
+            elif model_id == "hwcloud":
+                self._validate_hwcloud_credential(attrs)
+            elif model_id in {"fusioninsight", "storage", "sangforhci"}:
+                self._validate_platform_api_credential(attrs)
 
         if model_id == "winsphere":
             self._normalize_winsphere_instances(attrs)
@@ -637,8 +659,8 @@ class CollectModelSerializer(AuthSerializer):
     def to_representation(self, instance):
         """重写序列化输出"""
         representation = super().to_representation(instance)
-        # 对返回的凭据中的密码字段进行脱敏处理
-        credential = CollectCredentialPoolService.normalize_pool(copy.deepcopy(representation.get("credential")))
+        # 对返回的凭据中的密码字段进行脱敏处理；ID 引用先解析再掩码，旧前端仍能看到用户名。
+        credential = CollectCredentialPoolService.normalize_pool(copy.deepcopy(instance.decrypt_credentials))
         encrypted_fields = get_collect_model_passwords(collect_model_id=instance.model_id, driver_type=instance.driver_type)
         for item in credential:
             if not isinstance(item, dict):

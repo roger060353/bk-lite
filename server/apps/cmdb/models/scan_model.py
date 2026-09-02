@@ -2,8 +2,6 @@ from django.db import models
 from django.db.models import JSONField
 
 from apps.cmdb.constants.constants import CollectDriverTypes, CollectPluginTypes
-from apps.cmdb.models.collect_model import CollectModels
-from apps.cmdb.services.encrypt_collect_password import get_collect_model_passwords
 from apps.core.models.maintainer_info import MaintainerInfo
 from apps.core.models.time_info import TimeInfo
 
@@ -52,63 +50,27 @@ class ScanTask(MaintainerInfo, TimeInfo):
         verbose_name = "扫描任务"
         verbose_name_plural = verbose_name
 
-    def _encrypt_credential_item(self, model_id, raw_item):
-        if not isinstance(raw_item, dict):
-            return raw_item
-        item = dict(raw_item)
-        encrypted_fields = get_collect_model_passwords(
-            collect_model_id=model_id,
-            driver_type=scan_driver_type_for_model(model_id),
-        )
-        for field_name in encrypted_fields:
-            value = item.get(field_name)
-            if not value:
-                continue
-            item[field_name] = CollectModels.encrypt_password(value)
-        return item
-
-    def _decrypt_credential_item(self, model_id, raw_item):
-        if not isinstance(raw_item, dict):
-            return raw_item
-        item = dict(raw_item)
-        encrypted_fields = get_collect_model_passwords(
-            collect_model_id=model_id,
-            driver_type=scan_driver_type_for_model(model_id),
-        )
-        for field_name in encrypted_fields:
-            value = item.get(field_name)
-            if not value:
-                continue
-            item[field_name] = CollectModels.decrypt_password(value)
-        return item
-
     @property
     def decrypt_credentials(self):
-        raw = self.credentials or {}
-        if not isinstance(raw, dict):
-            return raw
-        decrypted = {}
-        for model_id, pool in raw.items():
-            if isinstance(pool, list):
-                decrypted[model_id] = [self._decrypt_credential_item(model_id, item) for item in pool]
-            elif isinstance(pool, dict):
-                decrypted[model_id] = self._decrypt_credential_item(model_id, pool)
-            else:
-                decrypted[model_id] = pool
-        return decrypted
+        from apps.cmdb.services.collect_credential_reference import resolve_scan_credentials
+
+        return resolve_scan_credentials(self.credentials or {}, scan_driver_type_for_model)
 
     def save(self, *args, **kwargs):
-        raw = self.credentials or {}
-        if isinstance(raw, dict):
-            encrypted = {}
-            for model_id, pool in raw.items():
-                if isinstance(pool, list):
-                    encrypted[model_id] = [self._encrypt_credential_item(model_id, item) for item in pool]
-                elif isinstance(pool, dict):
-                    encrypted[model_id] = self._encrypt_credential_item(model_id, pool)
-                else:
-                    encrypted[model_id] = pool
-            self.credentials = encrypted
+        if self.credentials:
+            from apps.cmdb.services.collect_credential_reference import persist_scan_credentials
+
+            persisted = persist_scan_credentials(
+                self.credentials,
+                name=self.name or "scan",
+                team=self.team,
+                operator=self.updated_by or self.created_by,
+            )
+            if persisted != self.credentials:
+                self.credentials = persisted
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None:
+                    kwargs["update_fields"] = list(set(update_fields) | {"credentials"})
         super().save(*args, **kwargs)
 
 

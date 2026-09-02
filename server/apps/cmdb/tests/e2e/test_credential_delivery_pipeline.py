@@ -6,7 +6,6 @@ from apps.cmdb.constants.constants import CollectDriverTypes, CollectPluginTypes
 from apps.cmdb.models.collect_model import CollectModels
 from apps.cmdb.node_configs.config_factory import NodeParamsFactory
 
-
 ENV_REFERENCE = re.compile(r"^\$\{([^}]+)}$")
 
 
@@ -59,7 +58,9 @@ def test_influxdb_token_survives_storage_node_management_and_stargazer():
         ],
     )
 
-    assert task.credential["token"].startswith("enc:")
+    assert task.credential.get("token") in (None, "")
+    assert task.credential.get("system_credential_id")
+    assert task.decrypt_credentials["token"] == "operator-token"
     node = NodeParamsFactory.get_node_params(task)
     payload = node.main("push")[0]
     assert "operator-token" not in payload["content"]
@@ -93,8 +94,11 @@ def test_legacy_platform_aksk_survives_delivery_as_collector_username_password()
         ],
     )
 
-    assert task.credential["accessKey"].startswith("enc:")
-    assert task.credential["accessSecret"].startswith("enc:")
+    assert task.credential.get("accessKey") in (None, "")
+    assert task.credential.get("accessSecret") in (None, "")
+    assert task.credential.get("system_credential_id")
+    assert task.decrypt_credentials["accessKey"] == "legacy-reader"
+    assert task.decrypt_credentials["accessSecret"] == "legacy-secret"
     node = NodeParamsFactory.get_node_params(task)
     payload = node.main("push")[0]
     assert "legacy-reader" not in payload["content"]

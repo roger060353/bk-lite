@@ -178,6 +178,9 @@ class ScanPushMonitorService:
                 item.update({"status": "failed", "reason": "credential_not_found"})
                 results.append(item)
                 continue
+            store_id = credential.get("system_credential_id") or credential.get("credential_id")
+            if store_id not in (None, "") and str(store_id).strip().isdigit():
+                credential = {"credential_id": str(store_id)}
 
             # hit.inst_uuid 可能为空或过期：按 uuid → 模型+IP 找回 CI（主机常见未回写 uuid）。
             instance = _resolve_graph_instance(hit)

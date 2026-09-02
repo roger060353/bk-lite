@@ -422,6 +422,13 @@ class MonitorModuleIngestService:
         credential = raw.get("credential")
         if not isinstance(credential, dict):
             return None
+        store_id = credential.get("credential_id")
+        if store_id not in (None, "") and str(store_id).strip().isdigit():
+            from apps.system_mgmt.services.connection_credential_service import ConnectionCredentialService
+
+            payload = ConnectionCredentialService.resolve(store_id)
+            if payload:
+                credential = {**payload, "credential_id": str(store_id)}
         username = str(credential.get("username") or credential.get("user") or credential.get("sec_name") or "").strip()
         community = str(credential.get("community") or "").strip()
         token = str(credential.get("token") or "").strip()

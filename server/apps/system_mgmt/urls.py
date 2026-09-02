@@ -3,6 +3,7 @@ from rest_framework import routers
 from apps.system_mgmt.viewset import (
     AppViewSet,
     ChannelViewSet,
+    ConnectionCredentialViewSet,
     CustomMenuGroupViewSet,
     ErrorLogViewSet,
     GroupDataRuleViewSet,
@@ -28,6 +29,7 @@ router.register(r"im_notification_channel", IMNotificationChannelViewSet)
 router.register(r"login_auth_binding", LoginAuthBindingViewSet)
 router.register(r"user_sync_source", UserSyncSourceViewSet)
 router.register(r"channel", ChannelViewSet)
+router.register(r"connection_credential", ConnectionCredentialViewSet)
 router.register(r"group_data_rule", GroupDataRuleViewSet)
 router.register(r"system_settings", SystemSettingsViewSet)
 router.register(r"app", AppViewSet)

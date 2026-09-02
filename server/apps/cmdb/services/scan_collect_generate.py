@@ -31,7 +31,16 @@ _COLLECT_FORM_DEFAULTS = {
 _DEFAULT_TIMEOUT = 60
 _DEFAULT_CYCLE_MINUTES = 30
 _V3_ONLY_FIELDS = ("username", "level", "integrity", "authkey", "privacy", "privkey")
-_INFLUX_ALLOWED_FIELDS = ("credential_id", "scheme", "port", "verify_tls", "token", "password")
+_INFLUX_ALLOWED_FIELDS = (
+    "credential_id",
+    "system_credential_id",
+    "credential_version",
+    "scheme",
+    "port",
+    "verify_tls",
+    "token",
+    "password",
+)
 _SINGLE_ENDPOINT_FAMILIES = frozenset({"influxdb"})
 
 
@@ -185,6 +194,8 @@ def _normalize_credential_item(family_model_id: str, credential_item: dict) -> d
     }
     if item.get("credential_id"):
         normalized["credential_id"] = item["credential_id"]
+    if item.get("system_credential_id"):
+        normalized["system_credential_id"] = item["system_credential_id"]
     if version.lower() == "v3":
         for key in _V3_ONLY_FIELDS:
             if item.get(key) not in (None, ""):
