@@ -934,13 +934,13 @@ def receive_config_file_result(data: dict):
     callback_status = str(payload.get("status") or "error").lower()
     if callback_status not in ConfigFileService.STATUS_MAP:
         callback_status = "unknown"
-    execution_id = str(payload.get("execution_id") or "-").replace("\r", "\\r").replace("\n", "\\n")[:64]
+    instance_uuid = str(payload.get("instance_uuid") or "-").replace("\r", "\\r").replace("\n", "\\n")[:64]
     callback_failed = callback_status != "success"
     log_terminal = logger.warning if error or callback_failed else logger.info
     log_terminal(
-        "event=config_file_callback_finished task_id=%s execution_id=%s " "callback_status=%s processed=%s changed=%s task_updated=%s stale=%s",
+        "event=config_file_callback_finished task_id=%s instance_uuid=%s " "callback_status=%s processed=%s changed=%s task_updated=%s stale=%s",
         payload.get("collect_task_id") or payload.get("task_id") or "-",
-        execution_id,
+        instance_uuid,
         callback_status,
         response["processed"],
         response["changed"],
@@ -1242,6 +1242,7 @@ def _format_room3d_device(device):
     locator = _parse_room3d_server_room_locator(device.get("inst_uuid"))
     if not locator or locator[0] != "uuid":
         return None
+    monitor_id = device.get("monitor_id")
     return {
         "device_id": locator[1],
         "device_name": device.get("inst_name") or "",
@@ -1249,6 +1250,7 @@ def _format_room3d_device(device):
         "rack_u_start": device.get("rack_u_start"),
         "u_size": device.get("u_size"),
         "status": device.get("status"),
+        "monitor_id": "" if monitor_id in (None, "") else str(monitor_id),
     }
 
 
@@ -1385,6 +1387,23 @@ def get_room3d_layout(server_room_id=None, user_info=None, **kwargs):
         "room": {"id": room_uuid_locator[1], "name": room.get("inst_name") or ""},
         "racks": racks,
     }
+    try:
+        from apps.cmdb.services.room3d_device_alarms import enrich_room3d_devices_with_alarms
+
+        enrich_room3d_devices_with_alarms(racks, user_info=user_info)
+    except Exception as exc:
+        from apps.cmdb.services.room3d_device_alarms import soft_fail_device_alarm_fields
+
+        logger.exception(
+            "room3d layout alarm enrich unexpected failure server_room_id=%s " "failed_stage=enrich error_type=%s",
+            room_uuid_locator[1],
+            type(exc).__name__,
+        )
+        # Soft-fail: strip any residual monitor_id and mark bound devices unavailable.
+        for rack in racks:
+            for device in rack.get("devices") or []:
+                if isinstance(device, dict):
+                    soft_fail_device_alarm_fields(device)
     notice = _format_room3d_invalid_location_notice(
         invalid_location_racks,
         _resolve_room3d_locale(user_info),
@@ -1928,6 +1947,13 @@ def model_inst_count(*args, **kwargs):
     获取模型实例数量
     """
     result = InstanceManage.model_inst_count(permissions_map={}, creator="")
+    return {"result": True, "message": "", "data": result}
+
+
+@nats_client.register
+def license_cmdb_instance_count(*args, **kwargs):
+    """许可管理专用：原生自动发现的收费模型实例数量。"""
+    result = InstanceManage.license_instance_count()
     return {"result": True, "message": "", "data": result}
 
 

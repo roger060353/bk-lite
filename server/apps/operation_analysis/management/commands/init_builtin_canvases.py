@@ -2,7 +2,8 @@
 """
 内置画布初始化命令
 
-合并 source_api.json 与 support-files/builtin_canvases.yaml 中的内置定义，
+合并 source_api.json、support-files/builtin_canvases.yaml 与
+support-files/flow_dashboard.yaml 中的内置定义，
 复用 ImportService 在一个事务中同步数据源和画布。
 
 - YAML 文件不存在或为空时静默跳过
@@ -20,7 +21,6 @@ from django.core.management import BaseCommand
 from django.db import transaction
 
 from apps.core.logger import operation_analysis_logger as logger
-from apps.operation_analysis.common.datasource_security import LEGACY_RAW_MONITOR_QUERY_ROUTES
 from apps.operation_analysis.common.load_json_data import load_support_json
 from apps.operation_analysis.constants.import_export import YAML_SCHEMA_VERSION
 
@@ -30,6 +30,10 @@ YAML_FILE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "support-files",
     "builtin_canvases.yaml",
+)
+FLOW_DASHBOARD_YAML_PATH = os.path.join(
+    os.path.dirname(YAML_FILE_PATH),
+    "flow_dashboard.yaml",
 )
 MERGEABLE_SECTIONS = ("dashboards", "topologies", "architectures", "screens", "reports", "datasources", "namespaces")
 DEFAULT_RETIRE_LIMIT = 200
@@ -156,8 +160,6 @@ def _collect_retired_builtin_objects(doc, canvas_type_model_map, datasource_mode
         datasource_model.objects.filter(is_build_in=True, build_in_key__isnull=False)
         .exclude(build_in_key="")
         .exclude(build_in_key__in=builtin_keys)
-        # 裸查询路由已停止新装发布，但存量画布仍依赖原数据源主键；迁移完成前不得自动退役。
-        .exclude(source_type="nats", rest_api__in=LEGACY_RAW_MONITOR_QUERY_ROUTES)
         .order_by("pk")
     )
     if lock:
@@ -205,8 +207,17 @@ def _get_builtin_canvas_file_paths():
     if isinstance(extra_files, (str, os.PathLike)):
         extra_files = [extra_files]
 
-    paths = [YAML_FILE_PATH]
-    paths.extend(str(path) for path in extra_files if str(path).strip())
+    paths = [YAML_FILE_PATH, FLOW_DASHBOARD_YAML_PATH]
+    seen = {os.path.abspath(path) for path in paths}
+    for path in extra_files:
+        normalized = str(path).strip()
+        if not normalized:
+            continue
+        absolute = os.path.abspath(normalized)
+        if absolute in seen:
+            continue
+        seen.add(absolute)
+        paths.append(normalized)
     return paths
 
 

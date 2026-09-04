@@ -7,22 +7,55 @@ from kubernetes.client import ApiException
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from apps.opspilot.metis.llm.tools.kubernetes.utils import format_bytes, parse_resource_quantity, prepare_context
+from apps.opspilot.metis.llm.tools.kubernetes.instance_scope import prepare_point_instance, run_scan_tool
+from apps.opspilot.metis.llm.tools.kubernetes.utils import coerce_int, format_bytes, parse_resource_quantity, prepare_context
 
 _EVENT_TIME_MIN = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _container_last_state(container) -> dict:
+    terminated = getattr(getattr(container, "last_state", None), "terminated", None)
+    if terminated is None:
+        return {}
+    finished_at = getattr(terminated, "finished_at", None)
+    return {
+        "reason": getattr(terminated, "reason", None),
+        "exit_code": getattr(terminated, "exit_code", None),
+        "finished_at": finished_at.isoformat() if finished_at else None,
+        "message": getattr(terminated, "message", None),
+    }
+
+
+def _as_utc_datetime(timestamp):
+    if timestamp is None or not isinstance(timestamp, datetime):
+        return None
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
 
 
 def _event_sort_time(event):
     timestamp = getattr(event, "last_timestamp", None)
     if timestamp is None:
         return _EVENT_TIME_MIN
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-        return timestamp.replace(tzinfo=timezone.utc)
-    return timestamp.astimezone(timezone.utc)
+    return _as_utc_datetime(timestamp) or _EVENT_TIME_MIN
+
+
+def _container_last_restart_at(container):
+    """最近一次重启时间：优先当前轮 startedAt，否则上一轮 terminated.finishedAt。"""
+    running = getattr(getattr(container, "state", None), "running", None)
+    started_at = _as_utc_datetime(getattr(running, "started_at", None) if running is not None else None)
+    if started_at is not None:
+        return started_at
+    terminated = getattr(getattr(container, "last_state", None), "terminated", None)
+    return _as_utc_datetime(getattr(terminated, "finished_at", None) if terminated is not None else None)
+
+
+_RESTART_COUNT_NOTE = "restart_count 是当前 Pod UID 上该容器自创建以来的累计次数，不是时间窗内次数，也不是排序键。"
 
 
 @tool()
-def get_failed_kubernetes_pods(config: RunnableConfig = None):
+def get_failed_kubernetes_pods(instance_name=None, config: RunnableConfig = None):
     """
     发现集群中所有失败或异常的Pod
 
@@ -65,6 +98,10 @@ def get_failed_kubernetes_pods(config: RunnableConfig = None):
     - 分析镜像问题 → 检查imageRegistry配置和Secret
     - 需要恢复服务 → 使用 restart_pod 或 delete_kubernetes_resource
     """
+    return run_scan_tool(config, instance_name, _get_failed_kubernetes_pods_on_instance)
+
+
+def _get_failed_kubernetes_pods_on_instance(config: RunnableConfig = None):
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -170,7 +207,7 @@ def _not_ready_pod_record(pod) -> dict:
 
 
 @tool()
-def get_not_ready_kubernetes_pods(namespace=None, config: RunnableConfig = None):
+def get_not_ready_kubernetes_pods(namespace=None, instance_name=None, config: RunnableConfig = None):
     """
     发现 Running 但未就绪的 Pod（Readiness 失败入口）
 
@@ -185,8 +222,13 @@ def get_not_ready_kubernetes_pods(namespace=None, config: RunnableConfig = None)
 
     Args:
         namespace (str, optional): 命名空间；省略则扫描全部命名空间
+        instance_name (str, optional): 多实例时指定集群；省略则扫描全部已配置实例
         config (RunnableConfig): 工具配置（自动传递）
     """
+    return run_scan_tool(config, instance_name, lambda bound: _get_not_ready_kubernetes_pods_on_instance(namespace, bound))
+
+
+def _get_not_ready_kubernetes_pods_on_instance(namespace, config: RunnableConfig = None):
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -207,7 +249,7 @@ def get_not_ready_kubernetes_pods(namespace=None, config: RunnableConfig = None)
 
 
 @tool()
-def get_pending_kubernetes_pods(config: RunnableConfig = None):
+def get_pending_kubernetes_pods(instance_name=None, config: RunnableConfig = None):
     """
     发现无法调度或启动的Pending状态Pod
 
@@ -248,6 +290,10 @@ def get_pending_kubernetes_pods(config: RunnableConfig = None):
     - 检查节点状态 → 使用 diagnose_node_issues
     - 存储问题 → 使用 check_kubernetes_persistent_volumes
     """
+    return run_scan_tool(config, instance_name, _get_pending_kubernetes_pods_on_instance)
+
+
+def _get_pending_kubernetes_pods_on_instance(config: RunnableConfig = None):
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -293,7 +339,7 @@ def get_pending_kubernetes_pods(config: RunnableConfig = None):
 
 
 @tool()
-def get_high_restart_kubernetes_pods(restart_threshold: int = 5, config: RunnableConfig = None):
+def get_high_restart_kubernetes_pods(restart_threshold: int = 5, instance_name=None, config: RunnableConfig = None):
     """
     发现频繁重启的不稳定Pod
 
@@ -308,6 +354,12 @@ def get_high_restart_kubernetes_pods(restart_threshold: int = 5, config: Runnabl
     - 显示每个容器的具体重启次数
     - 提供容器镜像信息，便于定位版本问题
     - 展示Ready状态，判断当前是否正常
+
+    **注意：** restart_count 是容器自创建以来的累计次数，不是今天或指定时间窗内的次数。
+    用户问「今天重启了几次」时，本工具不能当作时间窗答案；必须再用
+    get_resource_events_timeline 等按时间过滤，且不要把累计次数写成「今天重启了 N 次」。
+    用户要按重启时间排序、列出最近重启的 Pod 时，使用 get_recently_restarted_kubernetes_pods，
+    不要用本工具：这里没有重启时间，也不能按累计次数冒充「最近重启」。
 
     **与analyze_pod_restart_pattern的区别：**
     - 本工具：快速列表，找出"哪些Pod在重启"
@@ -343,6 +395,11 @@ def get_high_restart_kubernetes_pods(restart_threshold: int = 5, config: Runnabl
     - 查看完整事件历史 → 使用 get_resource_events_timeline
     - 查看容器日志 → 使用 get_kubernetes_pod_logs
     """
+    restart_threshold = coerce_int(restart_threshold, 5, lo=0, hi=10000)
+    return run_scan_tool(config, instance_name, lambda bound: _get_high_restart_kubernetes_pods_on_instance(restart_threshold, bound))
+
+
+def _get_high_restart_kubernetes_pods_on_instance(restart_threshold, config: RunnableConfig = None):
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -371,6 +428,104 @@ def get_high_restart_kubernetes_pods(restart_threshold: int = 5, config: Runnabl
         return json.dumps(high_restart)
     except ApiException as e:
         return json.dumps({"error": f"获取高重启Pod列表失败: {str(e)}"})
+
+
+@tool()
+def get_recently_restarted_kubernetes_pods(namespace=None, top_n: int = 10, instance_name=None, config: RunnableConfig = None):
+    """
+    按最近一次重启时间列出最近重启过的 Pod（默认 Top 10）
+
+    **何时使用此工具：**
+    - 用户要按重启时间排序、列出最近重启的 Pod
+    - 「最近 10 个重启的 Pod」「按照重启时间排序」
+    - 需要看谁最近刚重启过，而不是谁累计 restartCount 最高
+
+    **不要用此工具：**
+    - 已知具体 Pod 问重启原因 → diagnose_kubernetes_pod_issues
+    - 只想按累计次数找长期不稳定 Pod → get_high_restart_kubernetes_pods
+    - 问今天/近 N 小时重启了几次 → 本工具给不出时间窗次数
+
+    **工具能力：**
+    - 一次 list pods，按每个 Pod 最近一次重启时间降序取 Top-N
+    - 重启时间优先取当前轮 startedAt，否则上一轮 finishedAt；没有时间戳则跳过
+    - restart_count 只展示累计值，不是排序键，也不是窗口次数
+
+    Args:
+        namespace (str, optional): 命名空间；省略则扫描全部命名空间
+        top_n (int, optional): 返回条数，默认 10，最大 50
+        instance_name (str, optional): 多实例时指定集群；省略则扫描全部已配置实例
+        config (RunnableConfig): 工具配置（自动传递）
+
+    Returns:
+        JSON 对象：
+        - sort: last_restart_time_desc
+        - restart_count_note: 累计次数口径说明
+        - items[]: pod、namespace、container、last_restart_time、restart_count、ready、node
+    """
+    namespace = str(namespace).strip() if namespace else None
+    top_n = coerce_int(top_n, 10, lo=1, hi=50)
+    return run_scan_tool(config, instance_name, lambda bound: _get_recently_restarted_kubernetes_pods_on_instance(namespace, top_n, bound))
+
+
+def _iter_pod_container_statuses(pod):
+    for attr in ("container_statuses", "init_container_statuses"):
+        statuses = getattr(getattr(pod, "status", None), attr, None) or []
+        for container in statuses:
+            yield container
+
+
+def _recent_restart_row(pod, container, restarted_at):
+    return {
+        "pod": pod.metadata.name,
+        "namespace": pod.metadata.namespace,
+        "container": getattr(container, "name", None),
+        "last_restart_time": restarted_at.isoformat(),
+        "restart_count": int(getattr(container, "restart_count", 0) or 0),
+        "ready": bool(getattr(container, "ready", False)),
+        "node": getattr(getattr(pod, "spec", None), "node_name", None),
+        "_sort": restarted_at,
+    }
+
+
+def _best_recent_restart_row(pod):
+    best = None
+    for container in _iter_pod_container_statuses(pod):
+        restart_count = int(getattr(container, "restart_count", 0) or 0)
+        if restart_count < 1:
+            continue
+        restarted_at = _container_last_restart_at(container)
+        if restarted_at is None:
+            continue
+        row = _recent_restart_row(pod, container, restarted_at)
+        if best is None or (restarted_at, restart_count) > (best["_sort"], best["restart_count"]):
+            best = row
+    return best
+
+
+def _get_recently_restarted_kubernetes_pods_on_instance(namespace, top_n, config: RunnableConfig = None):
+    prepare_context(config)
+    try:
+        core_v1 = client.CoreV1Api()
+        if namespace:
+            pods = core_v1.list_namespaced_pod(namespace)
+        else:
+            pods = core_v1.list_pod_for_all_namespaces()
+        rows = []
+        for pod in pods.items:
+            row = _best_recent_restart_row(pod)
+            if row is not None:
+                rows.append(row)
+        rows.sort(key=lambda item: item["_sort"], reverse=True)
+        items = [{key: value for key, value in row.items() if key != "_sort"} for row in rows[:top_n]]
+        return json.dumps(
+            {
+                "sort": "last_restart_time_desc",
+                "restart_count_note": _RESTART_COUNT_NOTE,
+                "items": items,
+            }
+        )
+    except ApiException as e:
+        return json.dumps({"error": f"获取最近重启Pod列表失败: {str(e)}"})
 
 
 @tool()
@@ -645,7 +800,7 @@ def get_kubernetes_orphaned_resources(config: RunnableConfig = None):
 
 
 @tool()
-def diagnose_kubernetes_pod_issues(namespace, pod_name, config: RunnableConfig = None):  # noqa: C901
+def diagnose_kubernetes_pod_issues(namespace, pod_name, instance_name=None, config: RunnableConfig = None):  # noqa: C901
     """
     深度诊断单个Pod的所有问题 - 一站式故障排查
 
@@ -658,6 +813,7 @@ def diagnose_kubernetes_pod_issues(namespace, pod_name, config: RunnableConfig =
     **工具能力（最全面的Pod诊断）：**
     - Pod所有Conditions（Ready、Initialized、ContainersReady等）
     - 容器状态详情（waiting/running/terminated，含退出码）
+    - 每个容器的 last_state（上一轮终止 reason、exit_code、finished_at、message）
     - Init容器状态（初始化失败诊断）
     - 资源requests和limits配置
     - 挂载卷配置（PVC/ConfigMap/Secret/HostPath）
@@ -680,8 +836,8 @@ def diagnose_kubernetes_pod_issues(namespace, pod_name, config: RunnableConfig =
         JSON格式，包含完整的诊断信息：
         - phase: Pod状态（Running/Pending/Failed）
         - conditions[]: 所有Condition详情
-        - containers[]: 容器状态（state、restart_count、image）
-        - init_containers[]: Init容器状态
+        - containers[]: 容器状态（state、restart_count、last_state、image）
+        - init_containers[]: Init容器状态（含 last_state）
         - resource_requests: 资源请求配置
         - resource_limits: 资源限制配置
         - volumes[]: 卷挂载信息
@@ -690,12 +846,17 @@ def diagnose_kubernetes_pod_issues(namespace, pod_name, config: RunnableConfig =
         - restart_policy: 重启策略
 
     **配合其他工具使用：**
-    - 查看日志定位错误 → 使用 get_kubernetes_pod_logs
+    - 容器已重启、需要上一轮日志 → 使用 get_kubernetes_previous_pod_logs
+    - 查看当前轮日志 → 使用 get_kubernetes_pod_logs
     - 检查镜像拉取问题 → 查看events中的ImagePull相关错误
     - 资源不足 → 使用 get_kubernetes_node_capacity 检查节点容量
+    - 怀疑探针误杀 → 使用 validate_probe_configuration
     - 需要重启恢复 → 使用 restart_pod
     - 卷挂载问题 → 使用 check_kubernetes_persistent_volumes
     """
+    config, instance_error = prepare_point_instance(config, instance_name)
+    if instance_error:
+        return instance_error
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -772,6 +933,7 @@ def diagnose_kubernetes_pod_issues(namespace, pod_name, config: RunnableConfig =
                         "finished_at": container.state.terminated.finished_at.isoformat() if container.state.terminated.finished_at else None,
                     }
 
+                container_info["last_state"] = _container_last_state(container)
                 diagnosis["containers"].append(container_info)
 
         # Init容器状态
@@ -798,6 +960,7 @@ def diagnose_kubernetes_pod_issues(namespace, pod_name, config: RunnableConfig =
                         "exit_code": init_container.state.terminated.exit_code,
                     }
 
+                init_info["last_state"] = _container_last_state(init_container)
                 diagnosis["init_containers"].append(init_info)
 
         # 资源请求和限制

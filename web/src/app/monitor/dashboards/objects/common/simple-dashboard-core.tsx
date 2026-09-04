@@ -540,10 +540,20 @@ export function useSimpleDashboardData(config: SimpleDashboardConfig) {
 
   const loadSingleMetric = useCallback(
     (metric: SimpleMetricConfig, tv: TimeValuesProps) =>
-      getInstanceQuery(buildSearchParams(metric.query, metric.unit, idValues, instanceIdKeys, tv, undefined, false, currentInstanceInterval))
+      getInstanceQuery(buildSearchParams(
+        metric.query,
+        metric.unit,
+        idValues,
+        instanceIdKeys,
+        tv,
+        undefined,
+        false,
+        currentInstanceInterval,
+        { monitorObjectId, instanceId },
+      ))
         .then((result) => [metric.name, toMetricSeries(metric, result, instanceId, resolvedInstanceName, idValues, instanceIdKeys)] as const)
         .catch(() => [metric.name, { ...metric, viewData: [], loadState: 'error' as const }] as const),
-    [currentInstanceInterval, getInstanceQuery, idValues, instanceId, instanceIdKeys, resolvedInstanceName]
+    [currentInstanceInterval, getInstanceQuery, idValues, instanceId, instanceIdKeys, monitorObjectId, resolvedInstanceName]
   );
 
   const loadMetrics = useCallback(async (silent = false) => {
@@ -553,6 +563,14 @@ export function useSimpleDashboardData(config: SimpleDashboardConfig) {
     if (!silent) setLoading(true);
     try {
       if (displayMode === 'dashboard') {
+        // 侧栏切换对象时 URL 会短暂缺少 instance_id；身份未就绪前不发指标请求，避免空打与刷屏。
+        if (!idValues.length) {
+          setSeries({});
+          setPreviousSeries({});
+          setCollectionStatusMetric(null);
+          if (!silent) setLoading(false);
+          return;
+        }
         // 本次刷新冻结一个绝对时间窗,所有序列(含 KPI/采集状态/趋势/对比)复用,
         // 避免每条序列各自现算 now 导致时间戳网格错位、多序列面板 tooltip 只显示一条。
         const frozenTimeValues = freezeTimeValues(timeValues);
@@ -571,7 +589,17 @@ export function useSimpleDashboardData(config: SimpleDashboardConfig) {
           (metric) => loadSingleMetric(metric, frozenTimeValues)
         );
         const collectionStatusPromise: Promise<MetricSeries> = getInstanceQuery(
-          buildSearchParams(config.collectionStatusQuery, 'counts', idValues, instanceIdKeys, frozenTimeValues, undefined, false, currentInstanceInterval)
+          buildSearchParams(
+            config.collectionStatusQuery,
+            'counts',
+            idValues,
+            instanceIdKeys,
+            frozenTimeValues,
+            undefined,
+            false,
+            currentInstanceInterval,
+            { monitorObjectId, instanceId },
+          )
         )
           .then((result) =>
             toMetricSeries(
@@ -987,7 +1015,13 @@ export function useSimpleDashboardData(config: SimpleDashboardConfig) {
   const metaMetricChips = (config.metaMetrics || [])
     .filter((m) => hasMetricData(m.metric))
     .map((m) => `${m.label}: ${formatField({ label: m.label, metric: m.metric, unit: m.unit })}`);
-  const objectMetaItems = [objectDisplayText, ...metaMetricChips, ...(config.metaItems || []), '时区: Asia/Shanghai'];
+  // 与对象展示名仅大小写/分隔符不同的 meta（如 Ping vs ping、TCP vs tcp）视为重复，不再展示。
+  const normalizeMetaKey = (value: string) => value.trim().toLowerCase().replace(/[-_\s]+/g, '');
+  const objectMetaKey = normalizeMetaKey(objectDisplayText);
+  const dedupedConfigMetaItems = (config.metaItems || []).filter(
+    (item) => normalizeMetaKey(item) !== objectMetaKey
+  );
+  const objectMetaItems = [objectDisplayText, ...metaMetricChips, ...dedupedConfigMetaItems, '时区: Asia/Shanghai'];
 
   const onTimeChange = (val: number[], originValue: number | null) => setTimeValues({ timeRange: val, originValue });
   const onXRangeChange = (arr: [Dayjs, Dayjs]) => {

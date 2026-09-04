@@ -9,7 +9,22 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from apps.core.logger import opspilot_logger as logger
-from apps.opspilot.metis.llm.tools.kubernetes.utils import prepare_context
+from apps.opspilot.metis.llm.tools.kubernetes.instance_scope import prepare_point_instance, run_scan_tool
+from apps.opspilot.metis.llm.tools.kubernetes.utils import coerce_bool, coerce_int, prepare_context
+
+_DEFAULT_LOG_HOURS = 24
+_MAX_LOG_HOURS = 168
+
+
+def _pod_log_since_seconds(hours, *, default=_DEFAULT_LOG_HOURS):
+    """hours -> kubelet sinceSeconds（相对当前时间的滚动窗口）。
+
+    default=None 表示省略 hours 时不限窗，不传 since_seconds。
+    """
+    if default is None and (hours is None or hours == ""):
+        return None
+    fallback = _DEFAULT_LOG_HOURS if default is None else default
+    return coerce_int(hours, fallback, lo=1, hi=_MAX_LOG_HOURS) * 3600
 
 
 @tool()
@@ -67,7 +82,7 @@ def get_kubernetes_namespaces(config: RunnableConfig):
 
 
 @tool()
-def list_kubernetes_pods(namespace=None, config: RunnableConfig = None):
+def list_kubernetes_pods(namespace=None, instance_name=None, config: RunnableConfig = None):
     """
     查看Pod列表和基本状态
 
@@ -93,6 +108,7 @@ def list_kubernetes_pods(namespace=None, config: RunnableConfig = None):
             - None: 查看整个集群的Pod
             - "default": 只看default命名空间
             - "prod": 只看生产环境
+        instance_name (str, optional): 多实例时指定集群；省略则扫描全部已配置实例
         config (RunnableConfig): 工具配置（自动传递）
 
     Returns:
@@ -115,6 +131,14 @@ def list_kubernetes_pods(namespace=None, config: RunnableConfig = None):
     - 查看Pod日志 → 使用 get_kubernetes_pod_logs
     - 检查资源使用 → 使用 get_kubernetes_node_capacity
     """
+
+    def _run(bound_config):
+        return _list_kubernetes_pods_on_instance(namespace, bound_config)
+
+    return run_scan_tool(config, instance_name, _run)
+
+
+def _list_kubernetes_pods_on_instance(namespace, config: RunnableConfig = None):
     prepare_context(config)
     core_v1 = client.CoreV1Api()
     try:
@@ -196,7 +220,7 @@ def list_kubernetes_nodes(config: RunnableConfig):
 
 
 @tool()
-def list_kubernetes_deployments(namespace=None, limit=30, offset=0, config: RunnableConfig = None):
+def list_kubernetes_deployments(namespace=None, limit: int = 30, offset: int = 0, instance_name=None, config: RunnableConfig = None):
     """
     List deployments with optional namespace filter and pagination.
 
@@ -204,14 +228,23 @@ def list_kubernetes_deployments(namespace=None, limit=30, offset=0, config: Runn
         namespace (str, optional): Namespace to filter. If None, returns all namespaces.
         limit (int, optional): Maximum number of deployments to return (default 30, max 50).
         offset (int, optional): Number of deployments to skip for pagination (default 0).
+        instance_name (str, optional): 多实例时指定集群；省略则扫描全部已配置实例
         config (RunnableConfig): Configuration for the tool.
 
     Returns:
         JSON with fields: items (list), total (int), returned (int), offset (int), has_more (bool).
     """
+    limit = coerce_int(limit, 30, lo=1, hi=50)
+    offset = coerce_int(offset, 0, lo=0, hi=1_000_000)
+
+    def _run(bound_config):
+        return _list_kubernetes_deployments_on_instance(namespace, limit, offset, bound_config)
+
+    return run_scan_tool(config, instance_name, _run)
+
+
+def _list_kubernetes_deployments_on_instance(namespace, limit, offset, config: RunnableConfig = None):
     prepare_context(config)
-    limit = max(1, min(int(limit or 30), 50))
-    offset = max(0, int(offset or 0))
 
     apps_v1 = client.AppsV1Api()
     try:
@@ -329,13 +362,14 @@ def list_kubernetes_services(namespace=None, config: RunnableConfig = None):
 
 
 @tool()
-def list_kubernetes_events(namespace=None, config: RunnableConfig = None):
+def list_kubernetes_events(namespace=None, instance_name=None, config: RunnableConfig = None):
     """
     List events with optional namespace filter
 
     Args:
         namespace (str, optional): The namespace to filter events by.
             If None, events from all namespaces will be returned. Defaults to None.
+        instance_name (str, optional): 多实例时指定集群；省略则扫描全部已配置实例
         config (RunnableConfig): Configuration for the tool.
 
     Returns:
@@ -349,6 +383,14 @@ def list_kubernetes_events(namespace=None, config: RunnableConfig = None):
             - first_time (str): Timestamp when event first occurred
             - last_time (str): Timestamp when event last occurred
     """
+
+    def _run(bound_config):
+        return _list_kubernetes_events_on_instance(namespace, bound_config)
+
+    return run_scan_tool(config, instance_name, _run)
+
+
+def _list_kubernetes_events_on_instance(namespace, config: RunnableConfig = None):
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -377,7 +419,7 @@ def list_kubernetes_events(namespace=None, config: RunnableConfig = None):
 
 
 @tool()
-def get_kubernetes_resource_yaml(namespace, resource_type, resource_name, config: RunnableConfig = None):
+def get_kubernetes_resource_yaml(namespace, resource_type, resource_name, instance_name=None, config: RunnableConfig = None):
     """
     Retrieves the YAML configuration for a specified Kubernetes resource.
 
@@ -390,6 +432,7 @@ def get_kubernetes_resource_yaml(namespace, resource_type, resource_name, config
             Supported types: 'pod', 'deployment', 'service', 'configmap',
             'secret', 'job'
         resource_name (str): The name of the specific resource to retrieve.
+        instance_name (str, optional): 多实例时必须指定集群
         config (RunnableConfig): Configuration for the tool.
 
     Returns:
@@ -399,6 +442,9 @@ def get_kubernetes_resource_yaml(namespace, resource_type, resource_name, config
         ApiException: If there is an error communicating with the Kubernetes API
         ValueError: If an unsupported resource type is specified
     """
+    config, instance_error = prepare_point_instance(config, instance_name)
+    if instance_error:
+        return instance_error
     prepare_context(config)
     try:
         core_v1 = client.CoreV1Api()
@@ -441,7 +487,16 @@ def get_kubernetes_resource_yaml(namespace, resource_type, resource_name, config
 
 
 @tool()
-def get_kubernetes_pod_logs(namespace, pod_name, container=None, lines=100, tail=True, config: RunnableConfig = None):
+def get_kubernetes_pod_logs(
+    namespace,
+    pod_name,
+    container=None,
+    lines: int = 100,
+    tail: bool = True,
+    hours: int = 24,
+    instance_name=None,
+    config: RunnableConfig = None,
+):
     """
     获取Pod容器日志 - 定位应用程序错误
 
@@ -466,7 +521,8 @@ def get_kubernetes_pod_logs(namespace, pod_name, container=None, lines=100, tail
 
     **重要提示：**
     - 本工具只能获取当前运行容器的日志
-    - 如果容器已重启，无法获取上一次的日志（需要--previous参数，暂不支持）
+    - 容器已重启时，上一轮日志用 get_kubernetes_previous_pod_logs
+    - 默认只取近 24 小时（滚动窗口），再按 lines 截取
     - 日志默认最多1MB，超大日志会被截断
 
     Args:
@@ -482,6 +538,7 @@ def get_kubernetes_pod_logs(namespace, pod_name, container=None, lines=100, tail
         tail (bool, optional): True=最后N行，False=开头N行，默认True
             - True: 查看最新日志（推荐）
             - False: 查看启动初期日志
+        hours (int, optional): 近 N 小时（滚动窗口），默认24；最大168
         config (RunnableConfig): 工具配置（自动传递）
 
     Returns:
@@ -495,7 +552,13 @@ def get_kubernetes_pod_logs(namespace, pod_name, container=None, lines=100, tail
     - 日志显示网络错误 → 使用 trace_service_chain 检查服务链路
     - 需要重启恢复 → 使用 restart_pod
     """
+    config, instance_error = prepare_point_instance(config, instance_name)
+    if instance_error:
+        return instance_error
     prepare_context(config)
+    lines = coerce_int(lines, 100, lo=1, hi=10000)
+    tail = coerce_bool(tail, True)
+    since_seconds = _pod_log_since_seconds(hours)
     try:
         core_v1 = client.CoreV1Api()
 
@@ -521,6 +584,7 @@ def get_kubernetes_pod_logs(namespace, pod_name, container=None, lines=100, tail
             name=pod_name,
             namespace=namespace,
             container=container,
+            since_seconds=since_seconds,
             tail_lines=lines if tail else None,
             limit_bytes=None if lines else 1024 * 1024,  # 1MB limit if no line limit
         )
@@ -549,22 +613,48 @@ def get_kubernetes_pod_logs(namespace, pod_name, container=None, lines=100, tail
 
 
 @tool()
-def get_kubernetes_previous_pod_logs(namespace, pod_name, container=None, lines=100, tail=True, config: RunnableConfig = None):
+def get_kubernetes_previous_pod_logs(
+    namespace,
+    pod_name,
+    container=None,
+    lines: int = 100,
+    tail: bool = True,
+    hours=None,
+    instance_name=None,
+    config: RunnableConfig = None,
+):
     """
     获取Pod容器上一次实例的日志，用于重启类故障采集。
+
+    **何时使用此工具：**
+    - 已知具体 Pod，分析频繁重启的上一轮死因
+    - diagnose 已给出 last_state，需要对照崩溃现场日志
+    - 当前轮日志干净，但 restart_count > 0
+
+    **重要提示：**
+    - kubelet 只保留最近一次 previous 日志，不能还原全部历史重启
+    - 不要用本工具扫全集群；必须带 namespace 和 pod_name
 
     Args:
         namespace (str): Pod所在命名空间
         pod_name (str): Pod名称
-        container (str, optional): 容器名称，多容器Pod建议显式指定
+        container (str, optional): 容器名称，多容器Pod必须指定
         lines (int, optional): 日志行数，默认100
         tail (bool, optional): True=最后N行，False=开头N行
+        hours (int, optional): 近 N 小时（滚动窗口）；默认不限窗。仅显式传入时才按 sinceSeconds 过滤
+        instance_name (str, optional): 多实例时必须指定集群
         config (RunnableConfig): 工具配置
 
     Returns:
         str: previous 容器日志文本，或错误信息
     """
+    config, instance_error = prepare_point_instance(config, instance_name)
+    if instance_error:
+        return instance_error
     prepare_context(config)
+    lines = coerce_int(lines, 100, lo=1, hi=10000)
+    tail = coerce_bool(tail, True)
+    since_seconds = _pod_log_since_seconds(hours, default=None)
     try:
         core_v1 = client.CoreV1Api()
 
@@ -582,20 +672,26 @@ def get_kubernetes_previous_pod_logs(namespace, pod_name, container=None, lines=
         if not container and pod.spec.containers and len(pod.spec.containers) == 1:
             container = pod.spec.containers[0].name
 
-        logs = core_v1.read_namespaced_pod_log(
-            name=pod_name,
-            namespace=namespace,
-            container=container,
-            previous=True,
-            tail_lines=lines if tail else None,
-            limit_bytes=None if lines else 1024 * 1024,
-        )
+        log_kwargs = {
+            "name": pod_name,
+            "namespace": namespace,
+            "container": container,
+            "previous": True,
+            "tail_lines": lines if tail else None,
+            "limit_bytes": None if lines else 1024 * 1024,
+        }
+        if since_seconds is not None:
+            log_kwargs["since_seconds"] = since_seconds
+        logs = core_v1.read_namespaced_pod_log(**log_kwargs)
 
         if not tail and logs:
             log_lines = logs.split("\n")
             logs = "\n".join(log_lines[:lines])
 
         if not logs:
+            if since_seconds is not None:
+                window_hours = since_seconds // 3600
+                return f"Pod {pod_name} 容器 {container} 在近 {window_hours} 小时滚动窗口内没有 previous 日志。" f"这不等于没有 previous 容器；可加大 hours 或不传 hours（不限窗）再查。"
             return f"Pod {pod_name} 容器 {container} 没有上一次实例的日志输出"
 
         return logs

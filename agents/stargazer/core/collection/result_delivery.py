@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from core.collection.contracts import (
@@ -15,7 +16,7 @@ from core.collection.contracts import (
     has_publishable_metrics,
 )
 from core.collection.metrics import CollectionMetrics
-from core.collection.result_publisher import FuturePublishReceipt
+from core.collection.result_publisher import SCAN_CREDENTIAL_RESULT_SUBJECT, FuturePublishReceipt
 from core.collection.runtime import CollectionRequest, RunLease
 from core.logger import logger, safe_log_value
 
@@ -30,6 +31,90 @@ class PendingPublish:
     started_at: float
     deadline: float
     delivery_required: bool = True
+
+
+class BoundedResultDeliveryObserver:
+    """发布子系统内以固定 worker/队列观察 PubAck，不把 payload 交回 Run 汇总。"""
+
+    def __init__(
+        self,
+        delivery,
+        *,
+        worker_count: int = 4,
+        queue_capacity: int = 160,
+    ) -> None:
+        if worker_count <= 0:
+            raise ValueError("worker_count must be greater than zero")
+        if queue_capacity <= 0:
+            raise ValueError("queue_capacity must be greater than zero")
+        self._delivery = delivery
+        self._worker_count = int(worker_count)
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=queue_capacity)
+        self._workers: list[asyncio.Task] = []
+
+    async def observe(
+        self,
+        pending: PendingPublish,
+        *,
+        target: str,
+        on_terminal: Callable[[int, str, str, str, Exception | None], None],
+    ) -> None:
+        self._ensure_workers()
+        await self._queue.put((pending, target, on_terminal))
+
+    async def drain(self) -> None:
+        workers = tuple(self._workers)
+        if not workers:
+            return
+        await self._queue.join()
+        for _worker in workers:
+            await self._queue.put(None)
+        await asyncio.gather(*workers)
+        self._workers.clear()
+
+    async def abort(self) -> None:
+        workers = tuple(self._workers)
+        for worker in workers:
+            if not worker.done():
+                worker.cancel()
+        if workers:
+            await asyncio.gather(*workers, return_exceptions=True)
+        self._workers.clear()
+        while True:
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except asyncio.QueueEmpty:
+                return
+
+    def _ensure_workers(self) -> None:
+        if self._workers:
+            return
+        self._workers = [
+            asyncio.create_task(
+                self._worker(),
+                name=f"result-delivery-observer:{index}",
+            )
+            for index in range(self._worker_count)
+        ]
+
+    async def _worker(self) -> None:
+        while True:
+            item = await self._queue.get()
+            try:
+                if item is None:
+                    return
+                pending, target, on_terminal = item
+                try:
+                    index, status, error_code = await self._delivery.finish(pending)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # Run 边界通过 callback 接管异常身份
+                    on_terminal(pending.index, target, "", "", error)
+                else:
+                    on_terminal(index, target, status, error_code, None)
+            finally:
+                self._queue.task_done()
 
 
 class ResultDeliveryCoordinator:
@@ -222,7 +307,9 @@ def _requires_delivery(
     request: CollectionRequest,
     result: TargetCollectionResult,
 ) -> bool:
-    """显式 callback 保持协议；普通结果仅成功且非空时进入 metrics。"""
+    """显式 callback / 扫描一枪保持协议；普通结果仅成功且非空时进入 metrics。"""
     if str(request.params.get("callback_subject") or "").strip():
+        return True
+    if str(request.params.get("credential_result_subject") or "").strip() == SCAN_CREDENTIAL_RESULT_SUBJECT:
         return True
     return result.status == "success" and has_publishable_metrics(result.value)

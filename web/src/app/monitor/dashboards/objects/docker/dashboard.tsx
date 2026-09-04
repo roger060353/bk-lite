@@ -45,7 +45,7 @@ export default function DockerDashboardPage() {
   const timeKey = JSON.stringify(timeValues);
 
   useEffect(() => {
-    if (!isDashboardMode) {
+    if (!isDashboardMode || !idValues.length) {
       setTopBars({});
       return;
     }
@@ -60,7 +60,8 @@ export default function DockerDashboardPage() {
           timeValues,
           undefined,
           false,
-          currentInstanceInterval
+          currentInstanceInterval,
+          { monitorObjectId: dashboard.monitorObjectId, instanceId: dashboard.instanceId }
         )
       )
         .then((res: any) => [q.key, topLabelBars(res, q.unit, q.color, q.labelKeys)] as const)
@@ -71,7 +72,6 @@ export default function DockerDashboardPage() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentInstanceInterval, idValuesKey, timeKey, isDashboardMode, instanceIdKeys, getInstanceQuery, loadTick]);
 
   return (

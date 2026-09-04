@@ -66,8 +66,9 @@ export function FlowConversationTable({
   );
 
   useEffect(() => {
-    if (!dashboard.isDashboardMode || !instanceType) {
+    if (!dashboard.isDashboardMode || !instanceType || !dashboard.idValues.length) {
       setRows([]);
+      setLoading(false);
       return;
     }
 
@@ -84,6 +85,8 @@ export function FlowConversationTable({
           dashboard.timeValues,
           undefined,
           false,
+          dashboard.currentInstanceInterval,
+          { monitorObjectId: dashboard.monitorObjectId, instanceId: dashboard.instanceId },
         ),
       ).catch(() => null);
 

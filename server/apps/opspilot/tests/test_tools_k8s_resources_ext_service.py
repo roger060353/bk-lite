@@ -97,6 +97,15 @@ class TestListDeployments:
         assert "禁止" in out.get("_next_step_hint", "")
         assert "analyze_deployment_configurations" in out["_next_step_hint"]
 
+    def test_string_limit_and_offset_are_coerced(self, apis):
+        _, apps, _ = apis
+        deps = [self._dep(f"d{i}") for i in range(5)]
+        apps.list_deployment_for_all_namespaces.return_value = SimpleNamespace(items=deps)
+        out = json.loads(res.list_kubernetes_deployments.func(limit="2", offset="1", config={}))
+        assert out["returned"] == 2
+        assert out["offset"] == 1
+        assert out["items"][0]["name"] == "d1"
+
     def test_namespaced_and_limit_clamped(self, apis):
         _, apps, _ = apis
         apps.list_namespaced_deployment.return_value = SimpleNamespace(items=[self._dep("d", ready=None)])
@@ -231,10 +240,20 @@ class TestPreviousPodLogs:
         core.read_namespaced_pod_log.return_value = "panic: boom\nstack trace"
         out = res.get_kubernetes_previous_pod_logs.invoke({"namespace": "ns", "pod_name": "p1", "config": {}})
         assert "panic: boom" in out
-        # previous=True 必须传入
+        # previous=True 必须传入；默认不限窗，避免 sinceSeconds 误杀昨日崩溃日志
         _, kwargs = core.read_namespaced_pod_log.call_args
         assert kwargs["previous"] is True
         assert kwargs["container"] == "app"
+        assert "since_seconds" not in kwargs
+
+    def test_string_lines_and_tail_are_coerced(self, apis):
+        core, _, _ = apis
+        core.read_namespaced_pod.return_value = self._pod([SimpleNamespace(name="app")])
+        core.read_namespaced_pod_log.return_value = "l1\nl2\nl3"
+        out = res.get_kubernetes_previous_pod_logs.func(namespace="ns", pod_name="p1", lines="2", tail="false", hours="24", config={})
+        assert out == "l1\nl2"
+        _, kwargs = core.read_namespaced_pod_log.call_args
+        assert kwargs["since_seconds"] == 24 * 3600
 
     def test_empty_previous_logs(self, apis):
         core, _, _ = apis
@@ -242,6 +261,19 @@ class TestPreviousPodLogs:
         core.read_namespaced_pod_log.return_value = ""
         out = res.get_kubernetes_previous_pod_logs.invoke({"namespace": "ns", "pod_name": "p1", "config": {}})
         assert "没有上一次实例的日志" in out
+        assert "滚动窗口" not in out
+
+    def test_empty_previous_logs_with_hours_window(self, apis):
+        core, _, _ = apis
+        core.read_namespaced_pod.return_value = self._pod([SimpleNamespace(name="app")])
+        core.read_namespaced_pod_log.return_value = ""
+        out = res.get_kubernetes_previous_pod_logs.func(namespace="ns", pod_name="p1", hours=24, config={})
+        assert "近 24 小时滚动窗口内没有 previous 日志" in out
+        assert "不传 hours" in out
+        assert "没有上一次实例的日志" not in out
+        assert "没有可用的 previous 日志" not in out
+        _, kwargs = core.read_namespaced_pod_log.call_args
+        assert kwargs["since_seconds"] == 24 * 3600
 
     def test_no_previous_terminated_container(self, apis):
         core, _, _ = apis
