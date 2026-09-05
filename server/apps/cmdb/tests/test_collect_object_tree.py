@@ -178,6 +178,11 @@ def test_simple_collect_objects_expose_real_credential_protocol(monkeypatch):
         "credential_kind": "platform_api_account",
         "credential_default_port": 8088,
     }
+    assert {key: objects["netapp_ontap"][key] for key in ("credential_protocol", "credential_kind", "credential_default_port")} == {
+        "credential_protocol": "netapp_ontap_https",
+        "credential_kind": "platform_api_account",
+        "credential_default_port": 443,
+    }
     assert objects["storage"]["encrypted_fields"] == [
         "accessKey",
         "password",
@@ -189,6 +194,11 @@ def test_simple_collect_objects_expose_real_credential_protocol(monkeypatch):
         "credential_default_port": 443,
     }
     assert objects["dell_unity"]["encrypted_fields"] == [
+        "accessKey",
+        "password",
+        "accessSecret",
+    ]
+    assert objects["netapp_ontap"]["encrypted_fields"] == [
         "accessKey",
         "password",
         "accessSecret",

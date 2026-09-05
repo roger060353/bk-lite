@@ -155,6 +155,29 @@ async def test_dell_unity_collect_does_not_stall_event_loop(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_netapp_ontap_collect_does_not_stall_event_loop(monkeypatch):
+    from plugins.inputs.netapp_ontap import netapp_ontap_info
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def get(self, *_args, **_kwargs):
+            await asyncio.sleep(0.05)
+            return _JsonResponse({"name": "c1", "uuid": "u1", "records": [], "num_records": 0})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(netapp_ontap_info.httpx, "AsyncClient", FakeAsyncClient)
+
+    result = await _heartbeat_during(
+        netapp_ontap_info.NetAppOntapManager({"host": "10.0.0.10", "username": "u", "password": "p"}).list_all_resources()
+    )
+    assert result["success"] is True
+
+
+@pytest.mark.asyncio
 async def test_fusioninsight_collect_does_not_stall_event_loop(monkeypatch):
     from plugins.inputs.fusioninsight import fusioninsight_info
 
