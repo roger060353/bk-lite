@@ -32,12 +32,18 @@ async def test_oceanstor_manager_collects_from_http_mock():
         assert result["result"]["storage"][0]["ip_addr"] == server.host
         eth_ports = result["result"]["storage_eth_port"]
         fc_ports = result["result"]["storage_fc_port"]
-        assert [eth_port_identity(item) for item in eth_ports] == ["aa:bb:cc:dd:ee:01", ""]
-        assert [fc_port_identity(item) for item in fc_ports] == ["21:00:00:24:ff:5a:12:34", ""]
+        assert [eth_port_identity(item) for item in eth_ports] == ["aa:bb:cc:dd:ee:01", "", "aa:bb:cc:dd:ee:02"]
+        assert [fc_port_identity(item) for item in fc_ports] == ["21:00:00:24:ff:5a:12:34", "", "21:00:00:24:ff:5a:12:35"]
+        empty_eth = next(item for item in eth_ports if item["NAME"] == "CTE0.A.IOM0.P1")
+        empty_fc = next(item for item in fc_ports if item["NAME"] == "CTE0.A.IOM1.P1")
+        assert empty_eth["MACADDR"] == ""
+        assert eth_port_identity({"NAME": empty_eth["NAME"], "LOCATION": empty_eth["LOCATION"]}) == ""
+        assert eth_port_identity(empty_eth) == ""
+        assert fc_port_identity(empty_fc) == ""
         kept_eth = [item for item in eth_ports if eth_port_identity(item)]
         kept_fc = [item for item in fc_ports if fc_port_identity(item)]
-        assert len(kept_eth) == 1
-        assert len(kept_fc) == 1
+        assert [eth_port_identity(item) for item in kept_eth] == ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"]
+        assert [fc_port_identity(item) for item in kept_fc] == ["21:00:00:24:ff:5a:12:34", "21:00:00:24:ff:5a:12:35"]
 
 
 @pytest.mark.asyncio
@@ -83,5 +89,5 @@ async def test_oceanstor_mock_paginates_list_endpoints():
         OceanStorManager.PAGE_SIZE = original
 
     assert result["success"] is True
-    assert len(result["result"]["storage_eth_port"]) == 2
-    assert len(result["result"]["storage_fc_port"]) == 2
+    assert len(result["result"]["storage_eth_port"]) == 3
+    assert len(result["result"]["storage_fc_port"]) == 3

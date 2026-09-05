@@ -42,14 +42,26 @@ def _map_mock_fixtures(monkeypatch):
 def test_mock_fixtures_keep_empty_mac_and_wwpn_in_raw_collect():
     _device_id, collect_result_from_fixtures, _to_vm_vector = _mock_api()
     collect_result = collect_result_from_fixtures()
-    assert [item.get("MACADDR") for item in collect_result["storage_eth_port"]] == ["AA-BB-CC-DD-EE-01", ""]
-    assert [item.get("WWPN") for item in collect_result["storage_fc_port"]] == ["21000024FF5A1234", "--"]
+    eth_ports = collect_result["storage_eth_port"]
+    fc_ports = collect_result["storage_fc_port"]
+    assert [item.get("MACADDR") for item in eth_ports] == ["AA-BB-CC-DD-EE-01", "", None]
+    assert eth_ports[2]["MACADDRESS"] == "AA-BB-CC-DD-EE-02"
+    assert [item.get("WWPN") for item in fc_ports] == ["21000024FF5A1234", "--", None]
+    assert fc_ports[2]["WWN"] == "21000024FF5A1235"
+    empty_eth = eth_ports[1]
+    empty_fc = fc_ports[1]
+    assert empty_eth["MACADDR"] == ""
+    assert empty_eth.get("MACADDRESS") in (None, "")
+    assert empty_fc["WWPN"] == "--"
+    assert empty_fc.get("WWN") in (None, "")
 
 
 def test_mock_eth_port_skips_empty_mac_and_writes_contains(monkeypatch):
     runner, _collect = _map_mock_fixtures(monkeypatch)
     ports = runner.result["storage_eth_port"]
-    assert [item["inst_name"] for item in ports] == ["aa:bb:cc:dd:ee:01"]
+    assert [item["inst_name"] for item in ports] == ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"]
+    assert all(item["mac"] for item in ports)
+    assert "CTE0.A.IOM0.P1" not in [item["inst_name"] for item in ports]
     eth = ports[0]
     assert eth["mac"] == "aa:bb:cc:dd:ee:01"
     assert eth["name"] == "CTE0.A.IOM0.P0"
@@ -69,7 +81,9 @@ def test_mock_eth_port_skips_empty_mac_and_writes_contains(monkeypatch):
 def test_mock_fc_port_skips_empty_wwpn_and_writes_contains(monkeypatch):
     runner, _collect = _map_mock_fixtures(monkeypatch)
     ports = runner.result["storage_fc_port"]
-    assert [item["inst_name"] for item in ports] == ["21:00:00:24:ff:5a:12:34"]
+    assert [item["inst_name"] for item in ports] == ["21:00:00:24:ff:5a:12:34", "21:00:00:24:ff:5a:12:35"]
+    assert all(item["wwpn"] for item in ports)
+    assert "CTE0.A.IOM1.P1" not in [item["inst_name"] for item in ports]
     fc = ports[0]
     assert fc["wwpn"] == "21:00:00:24:ff:5a:12:34"
     assert fc["name"] == "CTE0.A.IOM1.P0"
@@ -143,7 +157,7 @@ def test_http_mock_session_then_cmdb_mapping_skips_and_contains(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(to_vm_vector(collect_result, timestamp=int(time.time()) - 60))
     runner.format_metrics()
-    assert [item["inst_name"] for item in runner.result["storage_eth_port"]] == ["aa:bb:cc:dd:ee:01"]
-    assert [item["inst_name"] for item in runner.result["storage_fc_port"]] == ["21:00:00:24:ff:5a:12:34"]
+    assert [item["inst_name"] for item in runner.result["storage_eth_port"]] == ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"]
+    assert [item["inst_name"] for item in runner.result["storage_fc_port"]] == ["21:00:00:24:ff:5a:12:34", "21:00:00:24:ff:5a:12:35"]
     assert runner.result["storage_eth_port"][0]["assos"][0]["model_asst_id"] == "storage_contains_storage_eth_port"
     assert runner.result["storage_fc_port"][0]["assos"][0]["model_asst_id"] == "storage_contains_storage_fc_port"

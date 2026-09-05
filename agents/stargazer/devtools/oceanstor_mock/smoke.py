@@ -45,14 +45,19 @@ def assert_collect_payload(result: dict, server: OceanStorMockServer) -> None:
     assert len(payload["storage_disk"]) == 1
     assert len(payload["storage_volume"]) == 1
     eth_ports = payload["storage_eth_port"]
-    assert len(eth_ports) == 2
+    assert len(eth_ports) == 3
     assert eth_ports[0]["MACADDR"] == "AA-BB-CC-DD-EE-01"
     assert eth_ports[0]["IPV4ADDR"] == "10.0.1.8"
     assert eth_ports[1]["MACADDR"] == ""
+    assert eth_ports[1].get("MACADDRESS") in (None, "")
+    assert eth_ports[2].get("MACADDR") in (None, "")
+    assert eth_ports[2]["MACADDRESS"] == "AA-BB-CC-DD-EE-02"
     fc_ports = payload["storage_fc_port"]
-    assert len(fc_ports) == 2
+    assert len(fc_ports) == 3
     assert fc_ports[0]["WWPN"] == "21000024FF5A1234"
     assert fc_ports[1]["WWPN"] == "--"
+    assert fc_ports[2].get("WWPN") in (None, "")
+    assert fc_ports[2]["WWN"] == "21000024FF5A1235"
 
 
 def main(argv=None) -> int:

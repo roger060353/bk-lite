@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""华为 OceanStor DeviceManager REST 最小 mock（仅测试 / 本地联调，不进生产）。
+"""华为 OceanStor DeviceManager REST 最小 mock。
 
-覆盖现有 `oceanstor_https` 采集器会打到的会话与配置端点：
-  POST   /deviceManager/rest/xxxxx/sessions
-  DELETE /deviceManager/rest/{deviceid}/sessions
-  GET    /deviceManager/rest/{deviceid}/system
-  GET    /deviceManager/rest/{deviceid}/storagepool|disk|lun|eth_port|fc_port
-         支持 range=[start-end] 分页。
+TEST-ONLY / 本地联调，不进默认生产采集路径，不改任务树默认值。
+语义对齐 `oceanstor_https`：POST /xxxxx/sessions → iBaseToken + deviceid，
+之后 GET /{deviceid}/{storagepool|disk|lun|eth_port|fc_port}。
+空 MAC / 空 WWPN 原样返回，调用方跳过，mock 不编造身份。
 """
 from __future__ import annotations
 

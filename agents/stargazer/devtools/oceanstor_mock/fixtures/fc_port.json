@@ -13,5 +13,13 @@
     "LOCATION": "CTE0.A.IOM1.P1",
     "WWPN": "--",
     "RUNNINGSTATUS": "28"
+  },
+  {
+    "ID": "2",
+    "NAME": "CTE0.A.IOM1.P2",
+    "LOCATION": "CTE0.A.IOM1.P2",
+    "WWN": "21000024FF5A1235",
+    "RUNSPEED": "16",
+    "RUNNINGSTATUS": "27"
   }
 ]
