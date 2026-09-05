@@ -79,6 +79,13 @@ class OceanStorNodeParams(PlatformApiNodeParamsMixin, BaseNodeParams):
     default_port = 8088
 
 
+class DellUnityNodeParams(PlatformApiNodeParamsMixin, BaseNodeParams):
+    supported_model_id = "dell_unity"
+    supported_driver_type = CollectDriverTypes.PROTOCOL
+    plugin_name = "dell_unity_info"
+    default_port = 443
+
+
 class NetAppOntapNodeParams(PlatformApiNodeParamsMixin, BaseNodeParams):
     supported_model_id = "netapp_ontap"
     supported_driver_type = CollectDriverTypes.PROTOCOL

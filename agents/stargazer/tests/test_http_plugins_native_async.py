@@ -132,6 +132,29 @@ async def test_oceanstor_collect_does_not_stall_event_loop(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dell_unity_collect_does_not_stall_event_loop(monkeypatch):
+    from plugins.inputs.dell_unity import dell_unity_info
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def get(self, url, **_kwargs):
+            await asyncio.sleep(0.05)
+            if "system" in url:
+                return _JsonResponse({"entries": [{"content": {"id": "0", "serialNumber": "FNM1", "model": "Unity 480"}}]})
+            return _JsonResponse({"entries": []})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(dell_unity_info.httpx, "AsyncClient", FakeAsyncClient)
+
+    result = await _heartbeat_during(dell_unity_info.DellUnityManager({"host": "10.0.0.20", "username": "u", "password": "p"}).list_all_resources())
+    assert result["success"] is True
+
+
+@pytest.mark.asyncio
 async def test_netapp_ontap_collect_does_not_stall_event_loop(monkeypatch):
     from plugins.inputs.netapp_ontap import netapp_ontap_info
 

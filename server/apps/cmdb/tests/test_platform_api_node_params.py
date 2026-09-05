@@ -35,6 +35,12 @@ def _fake_instance(model_id, credential, instance):
             {"ip_addr": "10.0.0.88"},
         ),
         (
+            "dell_unity",
+            "dell_unity_info",
+            443,
+            {"ip_addr": "10.0.0.20"},
+        ),
+        (
             "netapp_ontap",
             "netapp_ontap_info",
             443,
@@ -71,6 +77,7 @@ def test_platform_api_credentials_match_collector_contract(
     expected_host = {
         "fusioninsight": "fi.example.com",
         "storage": "10.0.0.88",
+        "dell_unity": "10.0.0.20",
         "netapp_ontap": "10.0.0.10",
     }[model_id]
     assert headers["cmdbhost"] == expected_host
