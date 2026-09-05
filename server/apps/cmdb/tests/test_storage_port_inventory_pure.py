@@ -31,7 +31,7 @@ def test_normalize_wwpn_lowercase_colon():
     assert normalize_wwpn("21000024ff5a1234") == "21:00:00:24:ff:5a:12:34"
     assert normalize_wwpn("21-00-00-24-FF-5A-12-34") == "21:00:00:24:ff:5a:12:34"
     assert normalize_wwpn("0x21000024FF5A1234") == "21:00:00:24:ff:5a:12:34"
-    assert normalize_wwpn("20000024ff5a1234aabbccdd") == "20:00:00:24:ff:5a:12:34:aa:bb:cc:dd"
+    assert normalize_wwpn("20000024ff5a1234aabbccddeeff0011") == "20:00:00:24:ff:5a:12:34:aa:bb:cc:dd:ee:ff:00:11"
 
 
 def test_normalize_wwpn_skips_empty_and_invalid():

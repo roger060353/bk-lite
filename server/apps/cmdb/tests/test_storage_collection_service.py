@@ -9,8 +9,6 @@
 """
 import time
 
-import pytest
-
 STORAGE_NAME = "华为存储-172.24.191.98"
 
 
@@ -146,7 +144,6 @@ def _make_runner(monkeypatch, inst_name=STORAGE_NAME):
     return OceanStorCollectionPlugin(inst_name=inst_name, inst_id=1, task_id=9301)
 
 
-@pytest.mark.django_db
 def test_storage_main_fields(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
@@ -164,7 +161,6 @@ def test_storage_main_fields(monkeypatch):
     assert s["running_status"] == "running"  # 27 → opera_status
 
 
-@pytest.mark.django_db
 def test_storage_pool_normalization_and_assoc(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
@@ -188,7 +184,6 @@ def test_storage_pool_normalization_and_assoc(monkeypatch):
     ]
 
 
-@pytest.mark.django_db
 def test_storage_disk_fields(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
@@ -205,7 +200,6 @@ def test_storage_disk_fields(monkeypatch):
     assert disk["assos"][0]["model_asst_id"] == "storage_disk_belong_storage"
 
 
-@pytest.mark.django_db
 def test_storage_volume_belong_pool(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
@@ -224,7 +218,6 @@ def test_storage_volume_belong_pool(monkeypatch):
     assert asst_ids["storage_volume_belong_storage_pool"]["inst_name"] == f"{STORAGE_NAME}/StoragePool001"
 
 
-@pytest.mark.django_db
 def test_storage_eth_port_mac_identity_and_contains(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
@@ -250,7 +243,6 @@ def test_storage_eth_port_mac_identity_and_contains(monkeypatch):
     assert all("interface_connect" not in a["model_asst_id"] for a in eth["assos"])
 
 
-@pytest.mark.django_db
 def test_storage_fc_port_wwpn_identity_and_contains(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
@@ -273,7 +265,6 @@ def test_storage_fc_port_wwpn_identity_and_contains(monkeypatch):
     ]
 
 
-@pytest.mark.django_db
 def test_storage_port_identity_is_stable_across_recollect(monkeypatch):
     runner = _make_runner(monkeypatch)
     runner.format_data(_vm_vector())
