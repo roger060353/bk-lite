@@ -13,7 +13,7 @@ storage_eth_port / storage_fc_port。
 from apps.cmdb.collection.collect_plugin.base import CollectBase
 from apps.cmdb.collection.collect_util import timestamp_gt_one_day_ago
 from apps.cmdb.collection.plugins import get_collection_plugin
-from apps.cmdb.collection.storage_port_inventory import eth_port_identity, fc_port_identity, optional_ipv4, optional_speed
+from apps.cmdb.collection.storage_port_inventory import eth_port_identity, fc_port_identity, optional_ipv4, optional_speed, port_display_name
 from apps.cmdb.constants.constants import CollectPluginTypes
 from apps.core.logger import cmdb_logger as logger
 
@@ -105,7 +105,10 @@ class OceanStorCollectMetrics(CollectBase):
         return eth_port_identity(data)
 
     def set_eth_ip(self, data, *args, **kwargs):
-        return optional_ipv4(data.get("IPV4ADDR") or data.get("LOGICIP") or data.get("ip_addr"))
+        return optional_ipv4(data.get("IPV4ADDR"))
+
+    def set_port_name(self, data, *args, **kwargs):
+        return port_display_name(data)
 
     def set_fc_wwpn(self, data, *args, **kwargs):
         return fc_port_identity(data)

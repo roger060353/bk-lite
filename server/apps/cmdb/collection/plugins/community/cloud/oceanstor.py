@@ -75,23 +75,23 @@ class OceanStorCollectionPlugin(AutoRegisterCollectionPluginMixin, OceanStorColl
             "alloc_type": "ALLOCTYPE",
             "running_status": OceanStorCollectMetrics.running_status,
         },
-        # 以太口（GET /eth_port）；身份为归一化 MAC，无 MAC 不入库
+        # 以太口（GET /eth_port）；MACADDR → mac，无 MAC 不入库
         "storage_eth_port": {
             "inst_name": OceanStorCollectMetrics.set_eth_inst_name,
             "self_device": OceanStorCollectMetrics.self_device,
             "assos": OceanStorCollectMetrics.asso_eth_port,
-            "name": "NAME",
+            "name": OceanStorCollectMetrics.set_port_name,
             "location": "LOCATION",
             "mac": OceanStorCollectMetrics.set_eth_mac,
             "ip_addr": OceanStorCollectMetrics.set_eth_ip,
             "running_status": OceanStorCollectMetrics.running_status,
         },
-        # FC 口（GET /fc_port）；身份为归一化 WWPN，无 WWPN 不入库
+        # FC 口（GET /fc_port）；WWPN → wwpn，无 WWPN 不入库
         "storage_fc_port": {
             "inst_name": OceanStorCollectMetrics.set_fc_inst_name,
             "self_device": OceanStorCollectMetrics.self_device,
             "assos": OceanStorCollectMetrics.asso_fc_port,
-            "name": "NAME",
+            "name": OceanStorCollectMetrics.set_port_name,
             "location": "LOCATION",
             "wwpn": OceanStorCollectMetrics.set_fc_wwpn,
             "speed": OceanStorCollectMetrics.set_fc_speed,

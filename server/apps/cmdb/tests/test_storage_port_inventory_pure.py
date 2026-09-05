@@ -7,6 +7,7 @@ from apps.cmdb.collection.storage_port_inventory import (
     normalize_wwpn,
     optional_ipv4,
     optional_speed,
+    port_display_name,
 )
 
 
@@ -45,20 +46,27 @@ def test_normalize_wwpn_skips_empty_and_invalid():
 
 
 def test_eth_port_identity_reads_huawei_mac_keys():
-    assert eth_port_identity({"MACADDRESS": "AA-BB-CC-DD-EE-01"}) == "aa:bb:cc:dd:ee:01"
     assert eth_port_identity({"MACADDR": "aabbccddee02"}) == "aa:bb:cc:dd:ee:02"
+    assert eth_port_identity({"MACADDRESS": "AA-BB-CC-DD-EE-01"}) == "aa:bb:cc:dd:ee:01"
     assert eth_port_identity({"mac": "aa:bb:cc:dd:ee:03"}) == "aa:bb:cc:dd:ee:03"
     assert eth_port_identity({"NAME": "ETH0"}) == ""
-    assert eth_port_identity({"MACADDRESS": ""}) == ""
+    assert eth_port_identity({"MACADDR": ""}) == ""
     assert eth_port_identity({}) == ""
 
 
 def test_fc_port_identity_reads_huawei_wwpn_keys():
-    assert fc_port_identity({"WWN": "21000024ff5a1234"}) == "21:00:00:24:ff:5a:12:34"
     assert fc_port_identity({"WWPN": "21:00:00:24:FF:5A:12:35"}) == "21:00:00:24:ff:5a:12:35"
+    assert fc_port_identity({"WWN": "21000024ff5a1234"}) == "21:00:00:24:ff:5a:12:34"
     assert fc_port_identity({"NAME": "FC0"}) == ""
-    assert fc_port_identity({"WWN": "--"}) == ""
+    assert fc_port_identity({"WWPN": "--"}) == ""
     assert fc_port_identity({}) == ""
+
+
+def test_port_display_name_uses_name_or_location():
+    assert port_display_name({"NAME": "ETH0", "LOCATION": "CTE0.A.P0"}) == "ETH0"
+    assert port_display_name({"LOCATION": "CTE0.A.P0"}) == "CTE0.A.P0"
+    assert port_display_name({"NAME": "--", "LOCATION": "CTE0.A.P1"}) == "CTE0.A.P1"
+    assert port_display_name({}) == ""
 
 
 def test_optional_ipv4_and_speed_skip_placeholders():

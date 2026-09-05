@@ -8,9 +8,10 @@ from apps.cmdb.collection.nic_inventory import normalize_nic_mac
 _HEX_WWPN_RE = re.compile(r"^[0-9a-f]{16}$|^[0-9a-f]{32}$")
 _EMPTY_WWPN = frozenset({"0" * 16, "0" * 32})
 _EMPTY_TOKENS = frozenset({"", "n/a", "na", "none", "null", "unknown", "-", "--"})
-_ETH_MAC_KEYS = ("MACADDRESS", "MACADDR", "mac")
-_FC_WWPN_KEYS = ("WWN", "WWPN", "wwpn")
-_ETH_IP_KEYS = ("IPV4ADDR", "LOGICIP", "ip_addr")
+# 产品锁定主键：MACADDR / WWPN / IPV4ADDR；其余为 Huawei DeviceManager 常见别名。
+_ETH_MAC_KEYS = ("MACADDR", "MACADDRESS", "mac")
+_FC_WWPN_KEYS = ("WWPN", "WWN", "wwpn")
+_ETH_NAME_KEYS = ("NAME", "LOCATION")
 _FC_SPEED_KEYS = ("RUNSPEED", "MAXSPEED", "SPEED")
 
 
@@ -39,8 +40,11 @@ def _first_present(data, keys):
         return ""
     for key in keys:
         value = data.get(key)
-        if value not in (None, ""):
-            return value
+        if value in (None, ""):
+            continue
+        if str(value).strip().lower() in _EMPTY_TOKENS:
+            continue
+        return value
     return ""
 
 
@@ -64,6 +68,17 @@ def optional_ipv4(raw) -> str:
     except (ipaddress.AddressValueError, ValueError):
         return ""
     if address.is_unspecified:
+        return ""
+    return token
+
+
+def port_display_name(data) -> str:
+    """产品锁定：LOCATION/NAME → name，优先接口名。"""
+    raw = _first_present(data, _ETH_NAME_KEYS)
+    if raw is None:
+        return ""
+    token = str(raw).strip()
+    if token.lower() in _EMPTY_TOKENS:
         return ""
     return token
 
