@@ -187,10 +187,11 @@ async def test_list_all_resources_collects_ports_and_system_in_same_session(monk
                         "data": [
                             {
                                 "NAME": "ETH0",
-                                "MACADDRESS": "AA-BB-CC-DD-EE-01",
+                                "LOCATION": "CTE0.A.IOM0.P0",
+                                "MACADDR": "AA-BB-CC-DD-EE-01",
                                 "IPV4ADDR": "10.0.1.8",
                             },
-                            {"NAME": "ETH1", "MACADDRESS": ""},
+                            {"NAME": "ETH1", "MACADDR": ""},
                         ],
                     }
                 )
@@ -199,8 +200,8 @@ async def test_list_all_resources_collects_ports_and_system_in_same_session(monk
                     {
                         "error": {"code": 0},
                         "data": [
-                            {"NAME": "FC0", "WWN": "21000024FF5A1234", "RUNSPEED": "16"},
-                            {"NAME": "FC1", "WWN": "--"},
+                            {"NAME": "FC0", "WWPN": "21000024FF5A1234", "RUNSPEED": "16"},
+                            {"NAME": "FC1", "WWPN": "--"},
                         ],
                     }
                 )
@@ -230,9 +231,10 @@ async def test_list_all_resources_collects_ports_and_system_in_same_session(monk
     assert storage["model"] == "Dorado 5000 V6"
     assert storage["firmware_version"] == "V600R003C00"
     assert len(result["result"]["storage_eth_port"]) == 2
-    assert result["result"]["storage_eth_port"][0]["MACADDRESS"] == "AA-BB-CC-DD-EE-01"
+    assert result["result"]["storage_eth_port"][0]["MACADDR"] == "AA-BB-CC-DD-EE-01"
+    assert result["result"]["storage_eth_port"][0]["IPV4ADDR"] == "10.0.1.8"
     assert len(result["result"]["storage_fc_port"]) == 2
-    assert result["result"]["storage_fc_port"][0]["WWN"] == "21000024FF5A1234"
+    assert result["result"]["storage_fc_port"][0]["WWPN"] == "21000024FF5A1234"
 
 
 @pytest.mark.asyncio
