@@ -1,0 +1,18 @@
+[
+  {
+    "ID": "0",
+    "NAME": "CTE0.A.IOM0.P0",
+    "LOCATION": "CTE0.A.IOM0.P0",
+    "MACADDR": "AA-BB-CC-DD-EE-01",
+    "IPV4ADDR": "10.0.1.8",
+    "RUNNINGSTATUS": "27"
+  },
+  {
+    "ID": "1",
+    "NAME": "CTE0.A.IOM0.P1",
+    "LOCATION": "CTE0.A.IOM0.P1",
+    "MACADDR": "",
+    "IPV4ADDR": "",
+    "RUNNINGSTATUS": "27"
+  }
+]
