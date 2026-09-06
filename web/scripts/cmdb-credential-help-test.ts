@@ -89,6 +89,22 @@ assert.equal(
   8088,
 );
 assert.equal(
+  getCredentialDescriptor({ model_id: 'dell_unity' })?.defaultPort,
+  443,
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'dell_unity' })?.formKind,
+  'platform_api',
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'netapp_ontap' })?.defaultPort,
+  443,
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'netapp_ontap' })?.formKind,
+  'platform_api',
+);
+assert.equal(
   getCredentialDescriptor({ model_id: 'winsphere' })?.defaultPort,
   443,
 );
