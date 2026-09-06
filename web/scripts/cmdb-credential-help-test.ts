@@ -121,6 +121,14 @@ assert.equal(
   'platform_api',
 );
 assert.equal(
+  getCredentialDescriptor({ model_id: 'hds_vsp' })?.defaultPort,
+  443,
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'hds_vsp' })?.formKind,
+  'platform_api',
+);
+assert.equal(
   getCredentialDescriptor({ model_id: 'winsphere' })?.defaultPort,
   443,
 );
