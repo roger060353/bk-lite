@@ -10,6 +10,7 @@ import { getCredentialDescriptor } from '../src/app/cmdb/(pages)/assetManage/aut
 assert.equal(createPlatformApiCredential('fusioninsight').port, 443);
 assert.equal(createPlatformApiCredential('storage').port, 8088);
 assert.equal(createPlatformApiCredential('dell_unity').port, 443);
+assert.equal(createPlatformApiCredential('dell_powerstore').port, 443);
 assert.equal(createPlatformApiCredential('netapp_ontap').port, 443);
 assert.deepEqual(
   buildPlatformApiCredential('storage', {
@@ -105,6 +106,7 @@ for (const modelId of [
   'inspurincloudrail',
   'azure',
   'dell_unity',
+  'dell_powerstore',
   'netapp_ontap',
 ]) {
   assert.equal(

@@ -97,6 +97,14 @@ assert.equal(
   'platform_api',
 );
 assert.equal(
+  getCredentialDescriptor({ model_id: 'dell_powerstore' })?.defaultPort,
+  443,
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'dell_powerstore' })?.formKind,
+  'platform_api',
+);
+assert.equal(
   getCredentialDescriptor({ model_id: 'netapp_ontap' })?.defaultPort,
   443,
 );
