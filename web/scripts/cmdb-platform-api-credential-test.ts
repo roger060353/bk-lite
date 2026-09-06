@@ -9,6 +9,8 @@ import { getCredentialDescriptor } from '../src/app/cmdb/(pages)/assetManage/aut
 
 assert.equal(createPlatformApiCredential('fusioninsight').port, 443);
 assert.equal(createPlatformApiCredential('storage').port, 8088);
+assert.equal(createPlatformApiCredential('dell_unity').port, 443);
+assert.equal(createPlatformApiCredential('netapp_ontap').port, 443);
 assert.deepEqual(
   buildPlatformApiCredential('storage', {
     username: ' admin ',
@@ -102,6 +104,8 @@ for (const modelId of [
   'sangforscp',
   'inspurincloudrail',
   'azure',
+  'dell_unity',
+  'netapp_ontap',
 ]) {
   assert.equal(
     getCredentialDescriptor({ model_id: modelId })?.formKind,
