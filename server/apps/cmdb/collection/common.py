@@ -1,3 +1,5 @@
+import json
+
 from dotenv import load_dotenv
 
 from apps.cmdb.collect.extensions import get_collect_enterprise_extension
@@ -51,9 +53,10 @@ class Management:
         self.add_list, self.update_list, self.heartbeat_list, self.delete_list = self.contrast(self.old_map, self.new_map)
 
     def get_check_attr_map(self):
-        attrs = ModelManage.search_model_attr(self.model_id)
+        self.model_attrs = ModelManage.search_model_attr(self.model_id)
+        self._prepared_display_attrs = None
         check_attr_map = dict(is_only={}, is_required={}, editable={})
-        for attr in attrs:
+        for attr in self.model_attrs:
             if attr.get("is_only", False):
                 check_attr_map["is_only"][attr["attr_id"]] = attr["attr_name"]
             if attr.get("is_required", False):
@@ -74,6 +77,52 @@ class Management:
         cleaned = dict(instance_info)
         cleaned[TAG_ATTR_ID] = []
         return cleaned
+
+    @staticmethod
+    def _coerce_enum_option_payload(option_value):
+        if isinstance(option_value, str):
+            try:
+                return json.loads(option_value)
+            except (TypeError, ValueError):
+                return option_value
+        return option_value
+
+    @classmethod
+    def _attr_for_display(cls, attr: dict) -> dict:
+        """枚举展示用运行时选项，公共库绑定与交互式 API 同源。"""
+        item = dict(attr)
+        if item.get("attr_type") != "enum":
+            return item
+
+        option_value = cls._coerce_enum_option_payload(item.get("option"))
+        if isinstance(option_value, dict) and option_value.get("enum_rule_type"):
+            item.setdefault("enum_rule_type", option_value.get("enum_rule_type", "custom"))
+            public_library_id = option_value.get("public_library_id")
+            if public_library_id:
+                item.setdefault("public_library_id", public_library_id)
+            if "enum_select_mode" in option_value:
+                item.setdefault("enum_select_mode", option_value["enum_select_mode"])
+            item["option"] = option_value.get("option", [])
+        elif option_value is not None:
+            item["option"] = option_value
+
+        runtime_options = ModelManage.resolve_runtime_enum_options(item)
+        if runtime_options:
+            item["option"] = runtime_options
+        return item
+
+    def _display_attrs(self):
+        prepared = getattr(self, "_prepared_display_attrs", None)
+        if prepared is None:
+            prepared = [self._attr_for_display(attr) for attr in getattr(self, "model_attrs", [])]
+            self._prepared_display_attrs = prepared
+        return prepared
+
+    def _apply_display_fields(self, instance_info: dict) -> dict:
+        """采集写入后刷新 _display，与 InstanceManage 创建/更新共用 DisplayFieldHandler。"""
+        from apps.cmdb.display_field import DisplayFieldHandler
+
+        return DisplayFieldHandler.build_display_fields(self.model_id, instance_info, self._display_attrs())
 
     def format_data(self):
         """数据格式化"""
@@ -194,6 +243,7 @@ class Management:
                         collect_time=self.collect_time,
                     )
                     instance_info = prepare_new_instance_identity(instance_info)
+                    instance_info = self._apply_display_fields(instance_info)
                     entity = ag.create_entity(INSTANCE, instance_info, self.check_attr_map, exist_items)
                     # 创建关联
                     assos_result = self.setting_assos(entity, assos)
@@ -227,6 +277,7 @@ class Management:
                         collect_time=self.collect_time,
                     )
                     assos = instance_info.pop("assos", [])
+                    instance_info = self._apply_display_fields(instance_info)
                     exist_items = [i for i in exist_items if i["_id"] != instance_info["_id"]]
                     entity = ag.set_entity_properties(INSTANCE, [instance_info["_id"]], instance_info, self.check_attr_map, exist_items)
                     # 更新关联

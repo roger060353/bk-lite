@@ -6,6 +6,7 @@
   - contrast：add/update/delete 分流 + IMMEDIATELY 清理策略
   - add_inst / update_inst / delete_inst：GraphClient 副作用、异常归入 failed、
     成功后触发自动关联调度
+  - 采集写入后按交互式 API 刷新 enum _display（如 running_status_display）
   - set_asso_info / setting_assos：关联落库、edge already exists 幂等成功
 
 只在 GraphClient / ModelManage.search_model_attr / schedule_* / 变更记录 /
@@ -340,6 +341,59 @@ def test_add_inst_empty_noop(monkeypatch):
     assert m.add_inst([]) == {"success": [], "failed": []}
 
 
+OPERA_STATUS_OPTIONS = [
+    {"id": "running", "name": "运行中"},
+    {"id": "stopped", "name": "已停止"},
+]
+
+
+def _running_status_attr(**overrides):
+    attr = {
+        "attr_id": "running_status",
+        "attr_name": "运行状态",
+        "attr_type": "enum",
+        "enum_rule_type": "public_library",
+        "public_library_id": "opera_status",
+        "option": list(OPERA_STATUS_OPTIONS),
+    }
+    attr.update(overrides)
+    return attr
+
+
+def _patch_opera_status_options(monkeypatch):
+    monkeypatch.setattr(
+        "apps.cmdb.services.model.ModelManage.resolve_runtime_enum_options",
+        lambda attr: list(OPERA_STATUS_OPTIONS) if attr.get("public_library_id") == "opera_status" else [],
+    )
+
+
+def test_add_inst_refreshes_running_status_display(monkeypatch):
+    fake = FakeGraph(query_entity=lambda _label, c: ([], 0), new_id=61)
+    _patch_opera_status_options(monkeypatch)
+    m = _mgmt(monkeypatch, fake, [], [], attrs=[_running_status_attr()])
+    result = m.add_inst([{"inst_name": "storage-01", "running_status": "running", "assos": []}])
+    written = fake.created_entities[0]
+    assert result["success"][0]["inst_info"]["running_status"] == "running"
+    assert written["running_status"] == "running"
+    assert written["running_status_display"] == "运行中"
+
+
+def test_add_inst_resolves_opera_status_public_library_options(monkeypatch):
+    fake = FakeGraph(query_entity=lambda _label, c: ([], 0), new_id=62)
+    _patch_opera_status_options(monkeypatch)
+    m = _mgmt(
+        monkeypatch,
+        fake,
+        [],
+        [],
+        attrs=[
+            _running_status_attr(option='{"enum_rule_type": "public_library", "public_library_id": "opera_status", "enum_select_mode": "single"}')
+        ],
+    )
+    m.add_inst([{"inst_name": "storage-01", "running_status": "running", "assos": []}])
+    assert fake.created_entities[0]["running_status_display"] == "运行中"
+
+
 # --------------------------------------------------------------------------
 # update_inst
 # --------------------------------------------------------------------------
@@ -349,6 +403,28 @@ def test_update_inst_success(monkeypatch):
     result = m.update_inst([{"_id": 7, "inst_name": "a", "assos": []}])
     assert len(result["success"]) == 1
     assert result["success"][0]["inst_info"]["inst_name"] == "a"
+
+
+def test_update_inst_refreshes_stale_running_status_display(monkeypatch):
+    fake = FakeGraph(query_entity=lambda _label, c: ([{"_id": 7, "inst_name": "storage-01"}], 1))
+    _patch_opera_status_options(monkeypatch)
+    m = _mgmt(monkeypatch, fake, [], [], attrs=[_running_status_attr()])
+    result = m.update_inst(
+        [
+            {
+                "_id": 7,
+                "inst_name": "storage-01",
+                "running_status": "running",
+                "running_status_display": "已停止",
+                "assos": [],
+            }
+        ]
+    )
+    written = fake.set_props[0]
+    assert result["success"][0]["inst_info"]["running_status"] == "running"
+    assert written["running_status"] == "running"
+    assert written["running_status_display"] == "运行中"
+    assert "assos" not in written
 
 
 def test_update_inst_queries_only_unique_candidates(monkeypatch):
