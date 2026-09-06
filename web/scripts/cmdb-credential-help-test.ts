@@ -129,6 +129,14 @@ assert.equal(
   'platform_api',
 );
 assert.equal(
+  getCredentialDescriptor({ model_id: 'hp_3par' })?.defaultPort,
+  443,
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'hp_3par' })?.formKind,
+  'platform_api',
+);
+assert.equal(
   getCredentialDescriptor({ model_id: 'winsphere' })?.defaultPort,
   443,
 );

@@ -233,6 +233,7 @@ export const CREDENTIAL_DESCRIPTORS = {
     netapp_ontap: platformApiDescriptor(443),
     pure_array: platformApiDescriptor(443),
     hds_vsp: platformApiDescriptor(443),
+    hp_3par: platformApiDescriptor(443),
     // 企业版云平台：HTTPS 平台账户（username/password[/port]）
     h3c_cas: platformApiDescriptor(443),
     fusioncompute: platformApiDescriptor(7443),
