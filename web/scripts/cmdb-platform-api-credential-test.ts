@@ -12,6 +12,7 @@ assert.equal(createPlatformApiCredential('storage').port, 8088);
 assert.equal(createPlatformApiCredential('dell_unity').port, 443);
 assert.equal(createPlatformApiCredential('dell_powerstore').port, 443);
 assert.equal(createPlatformApiCredential('netapp_ontap').port, 443);
+assert.equal(createPlatformApiCredential('pure_array').port, 443);
 assert.deepEqual(
   buildPlatformApiCredential('storage', {
     username: ' admin ',
@@ -108,6 +109,7 @@ for (const modelId of [
   'dell_unity',
   'dell_powerstore',
   'netapp_ontap',
+  'pure_array',
 ]) {
   assert.equal(
     getCredentialDescriptor({ model_id: modelId })?.formKind,

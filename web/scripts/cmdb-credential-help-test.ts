@@ -113,6 +113,14 @@ assert.equal(
   'platform_api',
 );
 assert.equal(
+  getCredentialDescriptor({ model_id: 'pure_array' })?.defaultPort,
+  443,
+);
+assert.equal(
+  getCredentialDescriptor({ model_id: 'pure_array' })?.formKind,
+  'platform_api',
+);
+assert.equal(
   getCredentialDescriptor({ model_id: 'winsphere' })?.defaultPort,
   443,
 );
