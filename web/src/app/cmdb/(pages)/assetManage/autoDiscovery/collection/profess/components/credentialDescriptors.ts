@@ -229,6 +229,7 @@ export const CREDENTIAL_DESCRIPTORS = {
       fields: PLATFORM_API_FIELDS('8088'),
     },
     dell_unity: platformApiDescriptor(443),
+    dell_powerstore: platformApiDescriptor(443),
     netapp_ontap: platformApiDescriptor(443),
     // 企业版云平台：HTTPS 平台账户（username/password[/port]）
     h3c_cas: platformApiDescriptor(443),
