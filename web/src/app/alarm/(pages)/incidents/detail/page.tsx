@@ -19,6 +19,7 @@ import { useCommon } from '@/app/alarm/context/common';
 import { useTranslation } from '@/utils/i18n';
 import { useSearchParams } from 'next/navigation';
 import { useIncidentsApi } from '@/app/alarm/api/incidents';
+import { collectSelectedAlertIds } from '@/app/alarm/utils/incidentAlertRelations';
 import { message, Spin, Modal, Timeline, Empty } from 'antd';
 import { IncidentTableDataItem } from '@/app/alarm/types/incidents';
 import { useStateMap } from '@/app/alarm/constants/alarm';
@@ -44,6 +45,8 @@ import { useLocalizedTime } from '@/hooks/useLocalizedTime';
 import { TimeLineItem } from '@/app/alarm/types/types';
 import { useUserInfoContext } from '@/context/userInfo';
 import GroupTreeSelect from '@/components/group-tree-select';
+import { useAiPageContext } from '@/components/ai-page-context';
+import { buildIncidentDetailPageContext } from './incidentDetail.context';
 
 const { TabPane } = Tabs;
 
@@ -57,7 +60,12 @@ const IncidentDetail: React.FC = () => {
   const [recordLoading, setRecordLoading] = useState<boolean>(false);
   const { levelListIncident, levelMapIncident, userList } = useCommon();
   const { getAlarmList } = useAlarmApi();
-  const { getIncidentDetail, modifyIncidentDetail } = useIncidentsApi();
+  const {
+    getIncidentDetail,
+    modifyIncidentDetail,
+    addAlertsToIncident,
+    removeAlertsFromIncident,
+  } = useIncidentsApi();
   const STATE_MAP = useStateMap();
   const searchParams = useSearchParams();
   const rowDetailId = searchParams.get('id') || '';
@@ -247,6 +255,44 @@ const IncidentDetail: React.FC = () => {
       .join(', ');
   }, [preTeams, flatGroups]);
 
+  const incidentContextLabels = useMemo(
+    () => ({
+      level: (value?: string | number) =>
+        levelListIncident.find((item) => item.level_id === Number(value))
+          ?.level_display_name || String(value ?? '--'),
+      state: (value?: string) =>
+        (value ? STATE_MAP[value as keyof typeof STATE_MAP] : undefined) ||
+        value ||
+        '--',
+      formatTime: (value?: string) =>
+        value ? convertToLocalizedTime(value) : '--',
+      team: () => {
+        const text = getTeamDisplay();
+        return text && text !== '--' ? text : '';
+      },
+    }),
+    [STATE_MAP, convertToLocalizedTime, getTeamDisplay, levelListIncident],
+  );
+
+  useAiPageContext(
+    () =>
+      buildIncidentDetailPageContext({
+        visible: true,
+        pageLoading: loadingDetail,
+        alertLoading: tabLoading,
+        incident: incidentDetail,
+        alerts: tableData,
+        labels: incidentContextLabels,
+      }),
+    [
+      loadingDetail,
+      tabLoading,
+      incidentDetail,
+      tableData,
+      incidentContextLabels,
+    ],
+  );
+
   const onTabTableChange = useCallback(() => {
     fetchAlarmList();
   }, []);
@@ -265,12 +311,9 @@ const IncidentDetail: React.FC = () => {
         else setUnlinkLoading(true);
 
         try {
-          const toRemove = keys ?? selectedRowKeys;
-          if (!toRemove.length) return;
-          const remainingIds = tableData
-            .map((i) => i.id)
-            .filter((id) => !toRemove.includes(id));
-          await modifyIncidentDetail(rowDetailId, { alert: remainingIds });
+          const selectedIds = collectSelectedAlertIds(keys ?? selectedRowKeys);
+          if (!selectedIds.length) return;
+          await removeAlertsFromIncident(rowDetailId, selectedIds);
           message.success(
             t('alarmCommon.unlinkAlert') + t('alarmCommon.success')
           );
@@ -292,13 +335,11 @@ const IncidentDetail: React.FC = () => {
   }, []);
 
   const handleLinkConfirm = async (selectedKeys: React.Key[]) => {
+    const selectedIds = collectSelectedAlertIds(selectedKeys);
+    if (!selectedIds.length) return;
     setLinkingLoading(true);
     try {
-      const existingIds = tableData.map((i) => i.id);
-      const newIds = Array.from(
-        new Set([...existingIds, ...(selectedKeys as number[])])
-      );
-      await modifyIncidentDetail(rowDetailId, { alert: newIds });
+      await addAlertsToIncident(rowDetailId, selectedIds);
       message.success(t('alarmCommon.linkAlert') + t('alarmCommon.success'));
       setOperateVisible(false);
       fetchAlarmList();
@@ -700,7 +741,7 @@ const IncidentDetail: React.FC = () => {
                   <GanttChart
                     loading={tabLoading}
                     alarmData={tableData}
-                    selectedTasks={selectedRowKeys as number[]}
+                    selectedTasks={collectSelectedAlertIds(selectedRowKeys)}
                     onSelectionChange={(keys) => setSelectedRowKeys(keys)}
                   />
                 )}

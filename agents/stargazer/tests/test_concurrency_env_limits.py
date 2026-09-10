@@ -13,14 +13,14 @@ from core.collection.contracts import TargetExecutorSettings
 from core.collection.executor import TargetWorkerBudget
 
 
-def test_default_concurrency_matches_production_baseline():
-    assert DEFAULT_MAX_ACTIVE_TARGETS == 160
-    assert DEFAULT_CONFIGURATION_MAX_ACTIVE_TARGETS == 100
-    assert DEFAULT_MONITORING_MAX_ACTIVE_TARGETS == 30
-    assert DEFAULT_NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS == 30
-    assert DEFAULT_TARGET_TASK_WINDOW == 160
-    assert TargetExecutorSettings().max_active_targets == 160
-    assert TargetExecutorSettings().target_task_window == 160
+def test_default_concurrency_matches_production_defaults():
+    assert DEFAULT_MAX_ACTIVE_TARGETS == 120
+    assert DEFAULT_CONFIGURATION_MAX_ACTIVE_TARGETS == 80
+    assert DEFAULT_MONITORING_MAX_ACTIVE_TARGETS == 20
+    assert DEFAULT_NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS == 20
+    assert DEFAULT_TARGET_TASK_WINDOW == 120
+    assert TargetExecutorSettings().max_active_targets == 120
+    assert TargetExecutorSettings().target_task_window == 120
     assert not hasattr(CollectionApplicationSettings(), "snmp_max_in_flight")
 
 
@@ -175,6 +175,7 @@ def test_env_example_uses_split_timeout_contract():
     assert "METRICS_ENCODE_WORKERS=2" in example
     assert "PUBLISH_WORKERS=4" in example
     assert "NATS_JS_PUBLISH_MAX_PENDING=256" in example
+    assert "NATS_JS_PUBLISH_MAX_PENDING_PER_CALL=64" in example
     assert "NATS_JS_PUBLISH_MAX_PENDING_BYTES=33554432" in example
     assert "NATS_METRICS_PENDING_SIZE_BYTES=34603008" in example
     assert "NATS_JS_STREAM_NAME=metrics" in example
@@ -184,15 +185,15 @@ def test_env_example_uses_split_timeout_contract():
     assert "NATS_DRAIN_TIMEOUT_SECONDS=5" in example
     assert "CAPACITY_LOG_INTERVAL=30" in example
     assert "MAX_ACTIVE_RUN_TARGETS=4000" in example
-    assert "MAX_ACTIVE_TARGETS=160" in example
+    assert "MAX_ACTIVE_TARGETS=120" in example
     assert "SNMP_MAX_IN_FLIGHT" not in example
     assert "SNMP_ENGINE_MAX_TARGETS=2000" in example
     assert "SNMP_ENGINE_IDLE_SECONDS=300" in example
     assert "SNMP_ENGINE_TOTAL_TARGET_BUDGET=4000" in example
-    assert "CONFIGURATION_MAX_ACTIVE_TARGETS=100" in example
-    assert "MONITORING_MAX_ACTIVE_TARGETS=30" in example
-    assert "NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS=30" in example
-    assert "TARGET_TASK_WINDOW=160" in example
+    assert "CONFIGURATION_MAX_ACTIVE_TARGETS=80" in example
+    assert "MONITORING_MAX_ACTIVE_TARGETS=20" in example
+    assert "NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS=20" in example
+    assert "TARGET_TASK_WINDOW=120" in example
     assert "CONNECT_TIMEOUT" not in keys
     assert "PLUGIN_TIMEOUT" not in keys
     assert "PUBLISH_TIMEOUT" not in keys

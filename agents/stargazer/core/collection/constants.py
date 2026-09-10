@@ -15,6 +15,8 @@ CREDENTIAL_KEYS = frozenset(
         "token",
         "secret_id",
         "secret_key",
+        "accessKey",
+        "accessSecret",
         "community",
         "private_key",
         "private_key_content",
@@ -38,6 +40,8 @@ SECRET_KEYS = frozenset(
         "secret",
         "secret_id",
         "secret_key",
+        "accesskey",
+        "accesssecret",
         "private_key",
         "community",
         "authkey",
@@ -99,8 +103,8 @@ SNMP_NO_RESPONSE_WORDS = (
 DEFAULT_COLLECTION_REDIS_PREFIX = "stargazer:collection:v1"
 
 # 配置采集目标并发默认值（环境变量可覆盖；0 = 不限制）
-DEFAULT_MAX_ACTIVE_TARGETS = 160
-DEFAULT_CONFIGURATION_MAX_ACTIVE_TARGETS = 100
-DEFAULT_MONITORING_MAX_ACTIVE_TARGETS = 30
-DEFAULT_NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS = 30
-DEFAULT_TARGET_TASK_WINDOW = 160
+DEFAULT_MAX_ACTIVE_TARGETS = 120
+DEFAULT_CONFIGURATION_MAX_ACTIVE_TARGETS = 80
+DEFAULT_MONITORING_MAX_ACTIVE_TARGETS = 20
+DEFAULT_NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS = 20
+DEFAULT_TARGET_TASK_WINDOW = 120

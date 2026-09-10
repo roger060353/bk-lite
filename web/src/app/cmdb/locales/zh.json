@@ -676,7 +676,25 @@
             "accessCompleteDesc": "采集器已上报到 VictoriaMetrics。CMDB 会按计划任务将 k8s 节点 / Pod / Workload / 命名空间等资源写入图谱；如需立即执行，可到任务详情手动触发一次。",
             "addAnotherCluster": "再接入一个集群",
             "generateCmdFailed": "生成安装命令失败",
-            "copyFailedManual": "复制失败，请手动选择复制。"
+            "copyFailedManual": "复制失败，请手动选择复制。",
+            "taintTolerations": "污点容忍",
+            "taintTolerationsDesc": "仅注入节点级 DaemonSet。CMDB 资源采集的中心组件是 Deployment，不会携带容忍。清空清单表示不容忍任何污点。",
+            "taintTolerationsAdd": "添加容忍",
+            "taintTolerationsRestore": "恢复默认",
+            "taintTolerationsKey": "污点 key（必填）",
+            "taintTolerationsValueOptional": "value（可选，留空为 Exists）",
+            "taintTolerationsEmptyHint": "清单已清空：DaemonSet 将不容忍任何污点，与未配置（默认两条）不同。",
+            "taintTolerationsDefaultHint": "当前为默认两条精确容忍。增删改后将按自定义清单下发。",
+            "taintTolerationsKeyRequired": "每项必须填写污点 key。",
+            "taintTolerationsKeyInvalid": "key 必须是 Kubernetes qualified name，且不能包含 __。",
+            "taintTolerationsPlaceholderReserved": "key / value 不能包含 __（模板占位符保留字）。",
+            "taintTolerationsEffectInvalid": "effect 只能是 NoSchedule 或 NoExecute。",
+            "taintTolerationsValueInvalid": "value 必须符合 Kubernetes 标签值规则。",
+            "taintTolerationsTooMany": "最多 16 条污点容忍。",
+            "taintTolerationsUnknownFields": "每项只允许 key / effect / value。",
+            "taintTolerationsMustBeArray": "污点容忍必须是列表。",
+            "taintTolerationsItemInvalid": "污点容忍项格式不正确。",
+            "singleNodeTaintPrecondition": "单节点集群若保留 control-plane 污点，中心组件（Deployment）会处于 Pending，需由管理员按 Kubernetes 惯例移除该污点；采集器不会给 Deployment 注入容忍。"
         },
         "VMTask": {
             "chooseVCenter": "vCenter",
@@ -951,6 +969,19 @@
             "hideSecret": "隐藏凭据",
             "enablePassword": "特权密码"
         },
+        "networkConfigFileTask": {
+            "supportedVendors": "当前支持厂商：{vendors}",
+            "vendorSeparator": "、",
+            "unsupportedInstance": "缺少厂商或厂商不支持的实例不可选择",
+            "configName": "配置名称",
+            "configNameRequired": "请输入配置名称",
+            "configNamePlaceholder": "例如 running-config",
+            "commands": "采集命令",
+            "commandsRequired": "请输入采集命令",
+            "commandsPlaceholder": "每行一条命令，例如：\nshow running-config\nshow version",
+            "dangerousCommand": "命令存在高危操作：{command}",
+            "chooseNetworkDevice": "选择网络设备"
+        },
         "influxdbTask": {
             "scheme": "连接协议",
             "operatorToken": "Operator Token",
@@ -961,6 +992,10 @@
             "invalidPort": "请输入 1–65535 的有效端口"
         },
         "platformApiTask": {
+            "tlsWarning": "关闭证书校验会增加中间人攻击风险，仅应临时用于受信任网络中的自签名证书。"
+        },
+        "RedfishTask": {
+            "verifyTls": "校验证书",
             "tlsWarning": "关闭证书校验会增加中间人攻击风险，仅应临时用于受信任网络中的自签名证书。"
         },
         "WinSphereTask": {
@@ -1128,7 +1163,8 @@
                 "macosSsh": "SSH",
                 "winsphereApi": "WinSphere HTTPS API",
                 "vsphereApi": "VMware vSphere HTTPS API",
-                "ipmi": "IPMI RMCP/RMCP+"
+                "ipmi": "IPMI RMCP/RMCP+",
+                "redfish": "Redfish HTTPS API"
             },
             "kind": {
                 "hostAccount": "目标主机操作系统账户",
@@ -1168,6 +1204,7 @@
                 "winsphere": "填写可访问 WinSphere 管理 API 的平台账户；建议使用只读或最小权限账户并开启证书校验。",
                 "vsphere": "填写可访问 VMware vCenter SDK/API 的账户；建议使用只读角色并开启证书校验。",
                 "ipmi": "填写目标物理服务器 BMC 的 IPMI 登录账户；建议使用满足资产读取所需的最低权限。",
+                "redfish": "填写目标物理服务器 BMC 的 Redfish 只读账户；固定使用 HTTPS，默认校验服务端证书。仅在受信任管理网络中接入自签名证书时关闭校验。",
                 "networkConfig": "填写可通过 SSH 登录网络设备并执行只读配置查看命令的账户；需要进入特权模式时再填写特权密码。",
                 "configFile": "填写可通过 SSH 登录目标主机并读取指定配置文件的操作系统账户。"
             },
@@ -1477,6 +1514,7 @@
         "added": "新增",
         "removed": "删除",
         "selectVersionHint": "请选择两个版本进行对比",
+        "diffOverBudgetHint": "当前两个版本行数过多，无法进行逐行对齐对比，已改为左右原文对照。",
         "versionNumber": "版本号",
         "status": "状态",
         "fileSize": "文件大小",

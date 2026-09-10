@@ -255,6 +255,8 @@
     "sourceType": "数据来源",
     "sourcePath": "来源标识",
     "sourceObject": "取数对象",
+    "searchPlaceholder": "搜索名称",
+    "allSourceTypes": "全部",
     "sourceTypes": {
       "nats": "NATS",
       "mysql": "MySQL",
@@ -804,6 +806,9 @@
     "networkTopoLoadFailed": "网络拓扑结构加载失败",
     "networkTopoStatusLoadFailed": "监控叠色加载失败",
     "networkTopoEmpty": "暂无网络拓扑关系",
+    "relatedTopology": "关联拓扑",
+    "relatedTopologyEmpty": "暂无关联",
+    "relatedTopologyLoadFailed": "关联拓扑加载失败",
     "networkTopoTruncated": "拓扑节点已达展示上限",
     "networkTopoMissingConfig": "请重新配置要展示的网络设备",
     "networkTopoLayoutHierarchical": "层级",
@@ -1136,6 +1141,8 @@
     "application3DHostStatus": "状态",
     "application3DHostAlarmCount": "条数",
     "application3DHostHighestSeverity": "最高级别",
+    "application3DHostIp": "IP 地址",
+    "application3DHostOs": "操作系统",
     "application3DKindSystem": "系统",
     "application3DKindApplication": "应用",
     "application3DKindHost": "主机",
@@ -1298,6 +1305,8 @@
     "addGroup": "添加分组",
     "importYaml": "导入 YAML",
     "exportYaml": "导出 YAML",
+    "copyTargetDirectory": "目标目录",
+    "copySuccess": "已复制为 {name}",
     "exportSuccess": "导出成功",
     "exportFailed": "导出失败",
     "exportConfirmMsg": "您确定要导出",
@@ -1363,7 +1372,8 @@
     "control": {
       "input": "输入框",
       "select": "下拉选择",
-      "radio": "单选按钮"
+      "radio": "单选按钮",
+      "organization": "组织"
     },
     "picker": "选择方式",
     "pickerDropdown": "下拉列表",

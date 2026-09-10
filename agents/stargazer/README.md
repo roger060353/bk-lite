@@ -57,11 +57,11 @@ STARGAZER_MONITOR_AUTH_PREVIOUS_TOKEN=<previous-token>
 ```bash
 MAX_ACTIVE_RUNS=16
 MAX_ACTIVE_RUN_TARGETS=4000
-MAX_ACTIVE_TARGETS=160
-CONFIGURATION_MAX_ACTIVE_TARGETS=100
-MONITORING_MAX_ACTIVE_TARGETS=30
-NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS=30
-TARGET_TASK_WINDOW=160
+MAX_ACTIVE_TARGETS=120
+CONFIGURATION_MAX_ACTIVE_TARGETS=80
+MONITORING_MAX_ACTIVE_TARGETS=20
+NETWORK_TOPOLOGY_MAX_ACTIVE_TARGETS=20
+TARGET_TASK_WINDOW=120
 SNMP_ENGINE_MAX_TARGETS=2000
 SNMP_ENGINE_IDLE_SECONDS=300
 SNMP_ENGINE_TOTAL_TARGET_BUDGET=4000
@@ -83,14 +83,12 @@ RUN_LEASE_HEARTBEAT=30
 COLLECTION_SHUTDOWN_GRACE=30
 EVENT_LOOP_LAG_INTERVAL=1
 CAPACITY_LOG_INTERVAL=30
-OUTBOUND_ALLOWED_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
-OUTBOUND_ALLOWED_DOMAINS=
 ```
 
-这些值是单 Pod、跨所有 Run 共享的容量。三类软配额必须为正整数，但不要求总和等于 160；
-三类同时积压时按 `100/30/30` 调度，某类无排队目标时，其他类可借满 160。新类别到达后不抢占
+这些值是单 worker、跨该 worker 内所有 Run 共享的容量。三类软配额必须为正整数，但不要求总和等于 120；
+三类同时积压时按 `80/20/20` 调度，某类无排队目标时，其他类可借满 120。新类别到达后不抢占
 在途目标，而是优先获得后续释放的槽位。SNMP 不再拥有独立目标并发池，直接与其他异步采集共享
-全局 160；`SYNC_SDK_MAX_IN_FLIGHT` 和 `REMOTE_JOB_MAX_IN_FLIGHT` 仅作为对应阻塞资源的第二维技术
+worker 内全局 120；`SYNC_SDK_MAX_IN_FLIGHT` 和 `REMOTE_JOB_MAX_IN_FLIGHT` 仅作为对应阻塞资源的第二维技术
 边界。配置非法时启动失败，不再支持用 `0` 隐式关闭边界。
 
 `MAX_ACTIVE_RUNS` 保留 Run 数量准入，`MAX_ACTIVE_RUN_TARGETS` 同时限制所有已接纳 Run 的目标总数；
@@ -106,7 +104,7 @@ v3 按用户名与密钥组合各一个），不再为每个目标新建 engine�
 P99 延迟 ≤25 ms）。`SNMP_ENGINE_MAX_TARGETS` 限制单个 engine 服务过的不同目标地址数
 （每个目标在 pysnmp LCD 中约占 20 KiB），达到后新目标换用新 engine、旧 engine 排空在途请求后关闭；
 `SNMP_ENGINE_IDLE_SECONDS` 是 engine 空闲多久后释放 dispatcher；`SNMP_ENGINE_TOTAL_TARGET_BUDGET`
-限制所有存活 engine 的 LCD 不同目标条目总数。存活 engine 数同时受 `MAX_ACTIVE_TARGETS=160` 约束；
+限制所有存活 engine 的 LCD 不同目标条目总数。存活 engine 数同时受 `MAX_ACTIVE_TARGETS=120` 约束；
 超过预算时先淘汰空闲 LRU，全部在途时等待容量。配置必须有限且位于受支持范围，否则启动失败。
 
 `REDIS_MAX_CONNECTIONS` 应不小于目标并发并留租约余量（推荐
@@ -120,7 +118,7 @@ P99 延迟 ≤25 ms）。`SNMP_ENGINE_MAX_TARGETS` 限制单个 engine 服务过
 `PREFLIGHT_TIMEOUT` 与 `PROBE_TIMEOUT` 分别控制协议预检和插件 AccessProbe，默认均为 15 秒。
 是否执行 IP 预检不再由全局环境变量控制。每个请求仅在 `params.ip_precheck` 为 `true`、`1`、
 `yes` 或 `on` 时执行协议连通性预检及插件 AccessProbe；缺失或为其他值时跳过这些探测，直接进入
-正式采集。CIDR/SSRF 出站安全检查不属于可选预检，无论请求开关如何都必须执行。
+正式采集。IP 预检只判断连通性，不按网段拦截目标；配置采集同样不按 CIDR/域名白名单拦截。
 `COLLECTION_TIMEOUT` 是正式采集缺省值 60 秒，插件 YAML executor 的 `timeout` 优先；
 发布阶段拆为三层：`PUBLISH_QUEUE_TIMEOUT` 默认 60 秒，控制等待有界发布队列接纳结果；
 `PUBLISH_DELIVERY_TIMEOUT` 默认 30 秒，控制实际 NATS publish/flush；`PUBLISH_TOTAL_TIMEOUT`
@@ -129,9 +127,6 @@ P99 延迟 ≤25 ms）。`SNMP_ENGINE_MAX_TARGETS` 限制单个 engine 服务过
 
 发布总超时发生在 NATS transport 触达前时会安全撤销队列项，不会在后台晚发，也不会误记为
 `delivery_unknown`；周期任务的结果幂等 ID 包含本轮 `attempt_id`。
-直接 IP 与域名解析后的每个可用地址都必须落在 `OUTBOUND_ALLOWED_CIDRS`；配置
-`OUTBOUND_ALLOWED_DOMAINS` 后，域名还必须同时命中该名单，域名名单不能绕过 CIDR 边界。
-生产环境应按实际采集边界收窄这两项。
 
 所有注册插件必须暴露异步入口。原生异步实现直接 `await`；同步 SDK 由插件自身在异步入口中
 显式调用 `asyncio.to_thread(self._sync_collect)`，并必须给 SDK 配置真实连接/读取超时。
@@ -152,7 +147,7 @@ P99 延迟 ≤25 ms）。`SNMP_ENGINE_MAX_TARGETS` 限制单个 engine 服务过
 正文。
 
 运行时默认每 30 秒输出一次 `event=collection_capacity`，专门记录
-`MAX_ACTIVE_TARGETS`（默认 160）全局异步目标槽位的已用、剩余、利用率和峰值，同时包含待调度
+`MAX_ACTIVE_TARGETS`（默认 120）单 worker 异步目标槽位的已用、剩余、利用率和峰值，同时包含待调度
 目标/Run、已接纳 Run 的目标总预算、发布队列与完整 payload 生命周期利用率、JetStream 本周期异常、
 事件循环 lag、进程 CPU/RSS/线程/FD，以及 cgroup v1/v2 CPU 限额、内存利用率和 CPU throttling
 增量。可通过 `CAPACITY_LOG_INTERVAL` 调整周期；该日志用于压测后判断
@@ -161,6 +156,12 @@ cgroup 内存利用率持续超过 80%、发布队列或 payload 生命周期容
 超时/拒绝，或 throttling 增量持续增长，不应继续
 上调并发，应先定位事件循环阻塞、CPU/内存限额或发布瓶颈。健康接口中字段为 `-1` 表示当前平台
 不可采集。
+
+JetStream 发布窗口由进程级 `NATS_JS_PUBLISH_MAX_PENDING` 限制总在途消息，并由
+`NATS_JS_PUBLISH_MAX_PENDING_PER_CALL`（默认 64）限制单个发布调用的占用，避免大拓扑结果阻塞
+同进程其他目标。超时分别计入总期限、信贷等待、发布调用和 PubAck 四类指标；容量日志中的
+“最老活动发布批次”是应用批次年龄，不是单条 PubAck 耗时。可用
+`scripts/benchmark_jetstream_publisher.py` 的 `mixed` 场景验证慢确认下的完整性、公平性和窗口上限。
 
 `collection_capacity` 保留英文 `event` 便于日志平台检索，正文按中文分为“任务、目标并发、配置、
 发布队列、事件循环、进程、容器”七段，并自动给出 `空闲 / 正常 / 繁忙 / 需关注` 状态及中文提示。

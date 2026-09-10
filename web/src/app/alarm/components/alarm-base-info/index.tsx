@@ -3,6 +3,7 @@
 import React from 'react';
 import DetailListPanel from '@/components/detail-list-panel';
 import MonitorObjectList from '@/app/alarm/components/monitor-object-list';
+import MonitorSourceList from '@/app/alarm/components/monitor-source-list';
 import type { MonitorObjectSnapshot } from '@/app/alarm/types/alarms';
 import { useTranslation } from '@/utils/i18n';
 
@@ -14,6 +15,9 @@ export interface AlarmBaseInfoDetail {
   resource_type?: string | null;
   resource_name?: string | null;
   monitor_objects?: MonitorObjectSnapshot[];
+  push_source_ids?: string[];
+  source_names?: string[];
+  enrichment?: Record<string, unknown>;
 }
 
 export interface AlarmBaseInfoProps {
@@ -33,6 +37,9 @@ const AlarmBaseInfo: React.FC<AlarmBaseInfoProps> = ({ detail }) => {
   const notificationStatus =
     detail.notification_status || detail.notify_status || '';
   const hasMonitorObjects = Boolean(detail.monitor_objects?.length);
+  const hasEnrichment = Boolean(
+    detail.enrichment && Object.keys(detail.enrichment).length
+  );
 
   const descriptionItems = [
     {
@@ -50,6 +57,18 @@ const AlarmBaseInfo: React.FC<AlarmBaseInfoProps> = ({ detail }) => {
       label: t('alarmCommon.operator'),
       value: detail.operator_user,
       copyable: false,
+    },
+    {
+      key: 'source_names',
+      label: t('alarmCommon.ruleFields.source_names'),
+      displayValue: <MonitorSourceList sources={detail.source_names} showCopy={false} />,
+      copyValue: detail.source_names?.join('\n'),
+    },
+    {
+      key: 'push_source_ids',
+      label: t('alarmCommon.monitorSource'),
+      displayValue: <MonitorSourceList sources={detail.push_source_ids} showCopy={false} />,
+      copyValue: detail.push_source_ids?.join('\n'),
     },
     {
       key: 'notificationStatus',
@@ -75,6 +94,16 @@ const AlarmBaseInfo: React.FC<AlarmBaseInfoProps> = ({ detail }) => {
       ) : undefined,
       copyable: false,
     },
+    ...(hasEnrichment ? [{
+      key: 'enrichment',
+      label: t('alarms.enrichment'),
+      displayValue: (
+        <pre className="max-h-[180px] overflow-auto whitespace-pre-wrap break-all text-xs">
+          {JSON.stringify(detail.enrichment, null, 2)}
+        </pre>
+      ),
+      copyable: false,
+    }] : []),
   ];
 
   return (

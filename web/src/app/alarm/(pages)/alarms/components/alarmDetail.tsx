@@ -12,7 +12,12 @@ import { useLocalizedTime } from '@/hooks/useLocalizedTime';
 import { useAlarmApi } from '@/app/alarm/api/alarms';
 import { useSettingApi } from '@/app/alarm/api/settings';
 import { useCommon } from '@/app/alarm/context/common';
-import { useStateMap } from '@/app/alarm/constants/alarm';
+import { useStateMap, useNotifiedStateMap } from '@/app/alarm/constants/alarm';
+import { useAiPageContext } from '@/components/ai-page-context';
+import {
+  ALARM_DETAIL_EVENT_LIMIT,
+  buildAlarmDetailPageContext,
+} from './alarmDetail.context';
 import EllipsisWithTooltip from '@/components/ellipsis-with-tooltip';
 import CompactEmptyState from '@/components/compact-empty-state';
 import {
@@ -36,6 +41,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
   useEffect,
+  useMemo,
   useRef,
 } from 'react';
 import {
@@ -45,9 +51,15 @@ import {
   Pagination,
   TimeLineItem,
 } from '@/app/alarm/types/types';
+import {
+  RelatedTopologyTabContent,
+  relatedTopologyTabItem,
+  useRelatedTopologyTab,
+} from '@/app/alarm/components/related-topology-tab';
 const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
   ({ handleAction, readonly = false }, ref) => {
     const STATE_MAP = useStateMap();
+    const notifiedState = useNotifiedStateMap();
     const { levelList, levelMap } = useCommon();
     const { t } = useTranslation();
     const { convertToLocalizedTime } = useLocalizedTime();
@@ -60,16 +72,27 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
     const [recordLoading, setRecordLoading] = useState<boolean>(false);
     const [eventLoading, setEventLoading] = useState<boolean>(false);
     const [eventList, setEventList] = useState<EventItem[]>([]);
+    const eventRequestIdRef = useRef(0);
     const [timeLineData, setTimeLineData] = useState<TimeLineItem[]>([]);
     const timelineRef = useRef<HTMLDivElement>(null);
     const isFetchingRef = useRef<boolean>(false);
-    const isBaseInfo = activeTab === 'baseInfo';
-    const isEventTab = activeTab === 'event';
     const [pagination, setPagination] = useState<Pagination>({
       current: 1,
       total: 0,
       pageSize: 100,
     });
+    const isBaseInfo = activeTab === 'baseInfo';
+    const isEventTab = activeTab === 'event';
+    const {
+      visible: relatedTopologyVisible,
+      centers: relatedTopologyCenters,
+      Widget: RelatedTopologyWidget,
+      loadFailed: relatedTopologyLoadFailed,
+    } =
+      useRelatedTopologyTab(
+        groupVisible ? formData.monitor_objects : undefined
+      );
+    const relatedTab = relatedTopologyTabItem(t, relatedTopologyVisible);
     const tabList: TabItem[] = [
       {
         key: 'baseInfo',
@@ -87,9 +110,11 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
         key: 'actionRecords',
         label: t('settings.actionTab'),
       },
+      ...(relatedTab ? [relatedTab] : []),
     ];
 
     const getEventListData = async (params: any) => {
+      const requestId = ++eventRequestIdRef.current;
       setEventLoading(true);
       try {
         const { items, count } = await getEventList({
@@ -97,10 +122,40 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
           page: pagination.current,
           page_size: pagination.pageSize,
         });
+        if (requestId !== eventRequestIdRef.current) return;
         setEventList(items || []);
         setPagination((prev) => ({ ...prev, total: count }));
       } finally {
-        setEventLoading(false);
+        if (requestId === eventRequestIdRef.current) {
+          setEventLoading(false);
+        }
+      }
+    };
+
+    const prefetchEvents = async (alertId?: number | string) => {
+      if (!alertId) return;
+      const requestId = ++eventRequestIdRef.current;
+      setEventLoading(true);
+      try {
+        const { items, count } = await getEventList({
+          alert_id: alertId,
+          page: 1,
+          page_size: ALARM_DETAIL_EVENT_LIMIT,
+        });
+        if (requestId !== eventRequestIdRef.current) return;
+        setEventList(items || []);
+        setPagination((prev) => ({
+          ...prev,
+          current: 1,
+          total: count || 0,
+        }));
+      } catch {
+        if (requestId !== eventRequestIdRef.current) return;
+        setEventList([]);
+      } finally {
+        if (requestId === eventRequestIdRef.current) {
+          setEventLoading(false);
+        }
       }
     };
 
@@ -127,12 +182,14 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
         form: AlarmTableDataItem;
         defaultTab?: string;
       }) => {
+        eventRequestIdRef.current += 1;
         setEventList([]);
         setGroupVisible(true);
         setTitle(title);
         setFormData(form);
         setActiveTab(defaultTab);
         setPagination((prev) => ({ ...prev, current: 1, total: 0 }));
+        prefetchEvents(form?.id);
       },
     }));
 
@@ -222,9 +279,12 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
     };
 
     const handleCancel = () => {
+      eventRequestIdRef.current += 1;
       setGroupVisible(false);
       setActiveTab('baseInfo');
       setTimeLineData([]);
+      setEventList([]);
+      setFormData({});
     };
 
     const changeTab = (val: string) => {
@@ -242,6 +302,51 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
       navigator.clipboard.writeText(text);
       message.success(t('alarmCommon.copied'));
     };
+
+    const detailContextLabels = useMemo(
+      () => ({
+        level: (value?: string | number) =>
+          levelList.find((item) => item.level_id === Number(value))
+            ?.level_display_name || String(value ?? '--'),
+        state: (value?: string) =>
+          STATE_MAP[value as keyof StateMap] || value || '--',
+        formatTime: (value?: string) =>
+          value ? convertToLocalizedTime(value) : '--',
+        notifyStatus: (value?: string) =>
+          notifiedState[value as keyof typeof notifiedState] || value || '--',
+        objects: (form: Record<string, any>) => {
+          if (!Array.isArray(form.monitor_objects) || !form.monitor_objects.length) {
+            return String(form.resource_name || '');
+          }
+          return form.monitor_objects
+            .map((item: { resource_type?: string; resource_name?: string }) =>
+              `${item.resource_type || '--'}: ${item.resource_name || '--'}`,
+            )
+            .join('；');
+        },
+      }),
+      [STATE_MAP, convertToLocalizedTime, levelList, notifiedState],
+    );
+
+    useAiPageContext(
+      () =>
+        buildAlarmDetailPageContext({
+          visible: groupVisible,
+          eventLoading,
+          formData,
+          eventData: eventList,
+          eventTotal: pagination.total,
+          labels: detailContextLabels,
+        }),
+      [
+        groupVisible,
+        eventLoading,
+        formData,
+        eventList,
+        pagination.total,
+        detailContextLabels,
+      ],
+    );
 
     return (
       <Drawer
@@ -400,6 +505,13 @@ const AlertDetail = forwardRef<ModalRef, ModalConfig & { readonly?: boolean }>(
                 <CompactEmptyState description={t('common.noData')} />
               )}
             </Spin>
+          )}
+          {activeTab === 'relatedTopology' && (
+            <RelatedTopologyTabContent
+              centers={relatedTopologyCenters}
+              Widget={RelatedTopologyWidget}
+              loadFailed={relatedTopologyLoadFailed}
+            />
           )}
           {activeTab === 'actionRecords' && (
             <ActionTimeline alertId={formData.alert_id || ''} />

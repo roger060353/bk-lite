@@ -1,5 +1,7 @@
 'use client';
 
+import { invalidMatchRules } from '@/app/alarm/utils/multivalueRules';
+
 import React, { useEffect, useState } from 'react';
 import { Drawer, Form, Input, Select, Button, Space, message, Radio } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
@@ -19,7 +21,7 @@ interface OperateModalProps {
 // 默认展示一条起始匹配条件行（参考相关性规则，避免空白难理解）；
 // 用户不填条件值则提交时被清理为空 = 对全部事件生效。
 const DEFAULT_MATCH_RULES = [
-  [{ key: 'resource_type', operator: 'eq', value: '' }],
+  [{ key: 'title', operator: 'eq', value: '' }],
 ];
 
 const OperateModal: React.FC<OperateModalProps> = ({
@@ -66,14 +68,17 @@ const OperateModal: React.FC<OperateModalProps> = ({
       setFilterType('all');
       form.setFieldsValue({
         provider_type: 'cmdb',
-        namespace: 'cmdb',
+        namespace: 'cmdb_custom',
         match_rules: DEFAULT_MATCH_RULES,
         on_multiple: 'first',
         input_binding: [
           { param: 'model_id', field: 'resource_type' },
-          { param: '_id', field: 'resource_id' },
+          { param: 'inst_uuid', field: 'resource_id' },
         ],
-        output_projection: [],
+        output_projection: [
+          { source: 'owner', as: '' },
+          { source: 'business_system', as: '' },
+        ],
       });
     }
   }, [open, isEdit, currentRow, form]);
@@ -91,21 +96,8 @@ const OperateModal: React.FC<OperateModalProps> = ({
           r.as ? { source: r.source, as: r.as } : { source: r.source }
         );
 
-      // 「全部」=> 空，对全部事件生效；「筛选」=> 清理未填全的条件行
-      const match_rules =
-        filterType === 'filter'
-          ? (values.match_rules || [])
-            .map((group: any[]) =>
-              (group || []).filter(
-                (it: any) =>
-                  it?.key &&
-                  it?.operator &&
-                  it?.value !== undefined &&
-                  it?.value !== ''
-              )
-            )
-            .filter((group: any[]) => group.length > 0)
-          : [];
+      const match_rules = filterType === 'filter' ? values.match_rules : [];
+
 
       const payload = {
         name: values.name,
@@ -184,7 +176,7 @@ const OperateModal: React.FC<OperateModalProps> = ({
           tooltip={t('settings.enrichmentNamespaceTip')}
           rules={[{ required: true, message: t('common.inputTip') }]}
         >
-          <Input placeholder="cmdb" />
+          <Input placeholder="cmdb_custom" />
         </Form.Item>
 
         <Form.Item
@@ -206,8 +198,8 @@ const OperateModal: React.FC<OperateModalProps> = ({
           </Radio.Group>
         </Form.Item>
         {filterType === 'filter' && (
-          <Form.Item name="match_rules" className="mb-4">
-            <MatchRule levelType="event" />
+          <Form.Item name="match_rules" className="mb-4" rules={[{validator: (_, value) => invalidMatchRules(value, false, "enrichment") ? Promise.reject(new Error(t('common.inputTip'))) : Promise.resolve()}]}>
+            <MatchRule scope="enrichment" levelType="event" />
           </Form.Item>
         )}
 
@@ -261,7 +253,7 @@ const OperateModal: React.FC<OperateModalProps> = ({
           </Form.List>
         </Form.Item>
 
-        <Form.Item label={t('settings.enrichmentOutputProjection')}>
+        <Form.Item label={t('settings.enrichmentOutputProjection')} required>
           <Form.List name="output_projection">
             {(fields, { add, remove }) => (
               <>

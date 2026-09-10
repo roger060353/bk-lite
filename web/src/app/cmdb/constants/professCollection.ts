@@ -241,15 +241,17 @@ export const K8S_FORM_INITIAL_VALUES = {
   timeout: 300,
   cleanupStrategy: 'immediately',
   cleanupDays: 3,
+  tolerations: null,
 };
 
 /** IP 表单 timeout 是所选子网整次正式扫描预算，单 IP 探测由插件固定为 5 秒。 */
+export const IP_DISCOVERY_MIN_TIMEOUT_SECONDS = 30;
 export const IP_DISCOVERY_FORM_INITIAL_VALUES = {
   cycle: CYCLE_OPTIONS.INTERVAL,
   intervalValue: 60,
   scanMethod: 'icmp',
   tcpPorts: '22,80,443,3389',
-  timeout: 300,
+  timeout: IP_DISCOVERY_MIN_TIMEOUT_SECONDS,
   cleanupStrategy: 'no_cleanup',
   cleanupDays: 3,
 };
@@ -439,20 +441,35 @@ export const normalizeNetworkConfigBrand = (brand?: string) =>
 export const isSupportedNetworkConfigBrand = (brand?: string) =>
   NETWORK_CONFIG_BRAND_ALIASES.has(normalizeNetworkConfigBrand(brand));
 
-export const validateNetworkConfigCommands = (value: string) => {
+type Translate = (
+  id: string,
+  fallback?: string,
+  values?: Record<string, string>
+) => string;
+
+export const validateNetworkConfigCommands = (
+  value: string,
+  t: Translate = (_id, fallback) => fallback || _id
+) => {
   const commands = (value || '')
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
   if (!commands.length) {
-    return '请输入采集命令';
+    return t('Collection.networkConfigFileTask.commandsRequired', '请输入采集命令');
   }
   const badCommand = commands.find((command) => {
     const lowered = command.toLowerCase().replace(/\s+/g, ' ');
     const firstWord = lowered.split(' ')[0];
     return DANGEROUS_EXACT_COMMANDS.has(lowered) || DANGEROUS_COMMAND_PREFIXES.has(firstWord);
   });
-  return badCommand ? `命令存在高危操作：${badCommand}` : '';
+  return badCommand
+    ? t(
+      'Collection.networkConfigFileTask.dangerousCommand',
+      '命令存在高危操作：{command}',
+      { command: badCommand }
+    )
+    : '';
 };
 
 export const validateCycleTime = (

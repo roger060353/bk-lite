@@ -245,11 +245,14 @@ async def qcloud_metrics(request):
     def build_params(req):
         minutes = req.args.get("minutes", 5)
         username = req.headers.get("username")
-        logger.info("Request: Minutes=%s", minutes)
+        # 未传 region 时保持历史默认 ap-guangzhou，避免旧配置行为突变。
+        region = (req.headers.get("region") or "").strip() or "ap-guangzhou"
+        logger.info("Request: Minutes=%s Region=%s", minutes, region)
         return {
             "monitor_type": "qcloud",
             "username": username,
             "password": req.headers.get("password"),
+            "region": region,
             "minutes": int(minutes),
             "tags": _standard_tags(req),
         }
@@ -323,7 +326,7 @@ async def windows_wmi_metrics(request):
     disk_include_fstypes = request.headers.get("disk_include_fstypes", "")
     disk_exclude_fstypes = request.headers.get(
         "disk_exclude_fstypes",
-        "tmpfs,devtmpfs,devfs,iso9660,overlay,aufs,squashfs,vfat,exfat,fat,fat32",
+        "tmpfs,devtmpfs,devfs,iso9660,overlay,aufs,squashfs,vfat,exfat,fat,fat32,cdfs",
     )
     raw_timeout = request.headers.get("timeout", "60")
     try:
@@ -380,7 +383,7 @@ async def host_metrics(request):
     disk_include_fstypes = request.headers.get("disk_include_fstypes", "")
     disk_exclude_fstypes = request.headers.get(
         "disk_exclude_fstypes",
-        "tmpfs,devtmpfs,devfs,iso9660,overlay,aufs,squashfs,vfat,exfat,fat,fat32",
+        "tmpfs,devtmpfs,devfs,iso9660,overlay,aufs,squashfs,vfat,exfat,fat,fat32,cdfs",
     )
     ansible_node_id = request.headers.get("ansible_node_id", "")
     winrm_scheme = request.headers.get("winrm_scheme", "https")

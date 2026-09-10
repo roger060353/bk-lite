@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { RadarChartOutlined } from '@ant-design/icons';
-import { Button, Empty, Tag, Typography } from 'antd';
+import { Button, Tag, Typography } from 'antd';
+import CompactEmptyState from '@/components/compact-empty-state';
 import { formatDateTime, formatLatency, formatNumber, formatRequestRate } from '@/app/apm/components/metric-format';
 import ServiceLanguageIcon from '@/app/apm/components/service-language-icon';
 import type { ApmTopologyEdge, ApmTopologyNode, ApmTopologySampleTrace, ApmTraceSummary } from '@/app/apm/types';
@@ -103,23 +104,36 @@ export default function TopologyInspectPanel({
     : selectedEdge && source && target
       ? t('apm.topology.edgeName', '{source} → {target}', { source: source.service_name, target: target.service_name })
       : t('apm.topology.overview', '总览');
+  const selectedServiceHref = selectedNode ? serviceHref(selectedNode) : null;
 
   return (
-    <aside aria-label={t('apm.topology.inspectPanel', '拓扑调查栏')} className="flex h-[640px] w-[320px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg)]">
+    <aside aria-label={t('apm.topology.inspectPanel', '服务概况')} className="flex h-[640px] w-[320px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg)]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-fill-1)]/50 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center gap-1.5 text-xs text-[var(--color-text-3)]">
             <RadarChartOutlined className="text-xs text-[var(--color-primary)]" aria-hidden="true" />
-            <span>{t('apm.topology.inspect', '调查')}</span>
+            <span>{t('apm.topology.inspect', '服务概况')}</span>
           </div>
           <div className="flex items-center gap-2">
             <Typography.Title level={5} className="!mb-0 truncate" title={title}>{title}</Typography.Title>
             {isInferredTopologyNode(selectedNode) ? <Tag bordered={false}>{t('apm.topology.inferredBadge', '推断')}</Tag> : null}
           </div>
         </div>
-        {isolated ? (
-          <Button size="small" onClick={onShowFullMap}>{t('apm.topology.showFullMap', '显示全图')}</Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {selectedServiceHref ? (
+            <Link
+              className="text-xs text-[var(--color-primary)]"
+              href={selectedServiceHref}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {t('apm.topology.viewDetail', '查看详情')}
+            </Link>
+          ) : null}
+          {isolated ? (
+            <Button size="small" onClick={onShowFullMap}>{t('apm.topology.showFullMap', '显示全图')}</Button>
+          ) : null}
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {!selectedNode && !selectedEdge ? (
@@ -229,7 +243,10 @@ export default function TopologyInspectPanel({
                 })}
               </ul>
             ) : (
-              <Empty className="!mt-3" image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('apm.topology.noSampleTraces', '当前选择没有样本 Trace')} />
+              <CompactEmptyState
+                className="mt-3"
+                description={t('apm.topology.noSampleTraces', '当前选择没有样本 Trace')}
+              />
             )}
           </section>
         ) : null}
@@ -262,7 +279,11 @@ function OverviewList({ nodes, onSelectNode }: { nodes: ApmTopologyNode[]; onSel
   const { t } = useTranslation();
   const sorted = [...nodes].sort((left, right) => left.service_name.localeCompare(right.service_name));
   if (!sorted.length) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('apm.topology.empty', '当前范围内没有观测到可用于构建拓扑的调用链。')} />;
+    return (
+      <CompactEmptyState
+        description={t('apm.topology.empty', '当前范围内没有观测到可用于构建拓扑的调用链。')}
+      />
+    );
   }
   return (
     <div className="flex flex-col gap-1.5">
