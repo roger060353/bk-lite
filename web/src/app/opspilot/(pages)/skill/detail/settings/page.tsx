@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Form, Input, Select, Switch, Button, InputNumber, message, Modal, Checkbox, Space, Tooltip } from 'antd';
-import { PlusOutlined, DeleteOutlined, SendOutlined, SearchOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, SendOutlined, SearchOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
 import { useTranslation } from '@/utils/i18n';
 import { useSearchParams } from 'next/navigation';
 import CustomChatSSE from '@/app/opspilot/components/custom-chat-sse';
@@ -36,11 +36,14 @@ import {
 } from '@/app/opspilot/utils/monitorToolConfig';
 import Icon from '@/components/icon';
 import OpsPilotStudioWorkbenchSkeleton from '@/app/opspilot/components/opspilot-studio-workbench-skeleton';
+import {
+  getSkillPackageKey as getPackageKey,
+  loadSkillSettingsAuxiliary,
+  mergeSkillPackageCatalog,
+} from '@/app/opspilot/utils/skillSettingsBootstrap';
 
 const { Option } = Select;
 const { TextArea } = Input;
-
-const getPackageKey = (pkg: SkillPackage) => String(pkg.id || `${pkg.package_id}:${pkg.version}`);
 
 const getPackageRequiredTools = (pkg: SkillPackage) => pkg.required_tools || [];
 
@@ -63,10 +66,7 @@ const SkillSettingsPage: React.FC = () => {
 
   const [chatHistoryEnabled, setChatHistoryEnabled] = useState(true);
   const [llmModels, setLlmModels] = useState<{ id: number, name: string, enabled: boolean, llm_model_type: string, vendor_name?: string }[]>([]);
-  const [pageLoading, setPageLoading] = useState({
-    llmModelsLoading: true,
-    formDataLoading: true,
-  });
+  const [formDataLoading, setFormDataLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
   const [quantity, setQuantity] = useState<number>(10);
   const [selectedTools, setSelectedTools] = useState<SelectTool[]>([]);
@@ -84,6 +84,7 @@ const SkillSettingsPage: React.FC = () => {
   const [skillPackageParams, setSkillPackageParams] = useState<Record<string, SkillPackageParam[]>>({});
   const [editingSkillPackage, setEditingSkillPackage] = useState<SkillPackage | null>(null);
   const [pendingRemoveAsset, setPendingRemoveAsset] = useState<SkillPackage | null>(null);
+  const [isTestChatFullscreen, setIsTestChatFullscreen] = useState(false);
 
   const currentModelName = useMemo(() => {
     if (!selectedModelId) return '';
@@ -144,45 +145,38 @@ const SkillSettingsPage: React.FC = () => {
         setQuantity(data.conversation_window_size ?? 10);
         setSelectedTools(normalizeMonitorToolConfigs((data.tools || []) as SelectTool[]));
         const packages = (data.skill_packages || []) as SkillPackage[];
-        setSelectedSkillAssetKeys(packages.map(getPackageKey));
+        const resolvedPackages = packages.map(withResolvedVariables);
+        setSelectedSkillAssetKeys(resolvedPackages.map(getPackageKey));
+        setAvailableSkillAssets((prev) => mergeSkillPackageCatalog(prev, resolvedPackages));
         setSkillPackageParams(data.skill_package_params || {});
         setSkillPermissions(data.permissions || []);
       } catch (error) {
         console.error(t('common.fetchFailed'), error);
       } finally {
-        setPageLoading(prev => ({ ...prev, formDataLoading: false }));
+        setFormDataLoading(false);
       }
     };
 
     const fetchInitialData = async () => {
       if (!id) return;
-      try {
-        const [llmModelsData, skillPackageData] = await Promise.all([
-          fetchLlmModels(),
-          fetchSkillPackages({ is_enabled: 1 }),
-        ]);
-        setLlmModels(llmModelsData as { id: number; name: string; enabled: boolean; llm_model_type: string; vendor_name?: string; }[]);
-        setAvailableSkillAssets((skillPackageData.items || []).map(withResolvedVariables));
-        fetchKnowledgeBases()
-          .then(setWikiKbs)
-          .catch(() => undefined);
-        setMemorySpacesLoading(true);
-        fetchWorkflowMemorySpaces()
-          .then((items) => setMemorySpaces(Array.isArray(items) ? items : []))
-          .catch(() => setMemorySpaces([]))
-          .finally(() => setMemorySpacesLoading(false));
-        fetchFormData();
-      } catch (error) {
-        console.error(t('common.fetchFailed'), error);
-      } finally {
-        setPageLoading(prev => ({ ...prev, llmModelsLoading: false }));
-      }
+      void fetchFormData();
+      setMemorySpacesLoading(true);
+      fetchWorkflowMemorySpaces()
+        .then((items) => setMemorySpaces(Array.isArray(items) ? items : []))
+        .catch(() => setMemorySpaces([]))
+        .finally(() => setMemorySpacesLoading(false));
+      const { llmModels: llmModelsData, skillPackages, knowledgeBases } = await loadSkillSettingsAuxiliary({
+        fetchLlmModels,
+        fetchSkillPackages: () => fetchSkillPackages({ is_enabled: 1 }),
+        fetchKnowledgeBases,
+      });
+      setLlmModels(llmModelsData as { id: number; name: string; enabled: boolean; llm_model_type: string; vendor_name?: string; }[]);
+      setAvailableSkillAssets((prev) => mergeSkillPackageCatalog(skillPackages.map(withResolvedVariables), prev));
+      setWikiKbs(knowledgeBases);
     };
 
     fetchInitialData();
   }, [id]);
-
-  const allLoading = Object.values(pageLoading).some(loading => loading);
 
   useEffect(() => {
     const current = (form.getFieldValue('usage_team') || []).map(Number).filter((n: number) => !Number.isNaN(n));
@@ -198,6 +192,17 @@ const SkillSettingsPage: React.FC = () => {
       form.setFieldValue('force_wiki_grounded', false);
     }
   }, [form, hasWikiKb]);
+
+  useEffect(() => {
+    if (!isTestChatFullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsTestChatFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isTestChatFullscreen]);
 
   const handleSave = async () => {
     try {
@@ -674,7 +679,7 @@ const SkillSettingsPage: React.FC = () => {
         )}
       </Modal>
 
-      {allLoading ? (
+      {formDataLoading ? (
         <OpsPilotStudioWorkbenchSkeleton />
       ) : (
         <div className="flex h-full min-h-0 gap-3.5">
@@ -959,14 +964,8 @@ const SkillSettingsPage: React.FC = () => {
                   <SkillMemorySettingsFields spaces={memorySpaces} loading={memorySpacesLoading} />
 
                   <Form.Item
-                    label={
-                      <span className="inline-flex items-center gap-1">
-                        {t('skill.chatHistory')}
-                        <Tooltip title={t('skill.chatHistoryTip')}>
-                          <QuestionCircleOutlined className="text-[11px] text-[var(--color-text-4)] hover:text-[var(--color-text-3)] cursor-pointer" />
-                        </Tooltip>
-                      </span>
-                    }
+                    label={t('skill.chatHistory')}
+                    tooltip={t('skill.chatHistoryTip')}
                     className="!mb-3.5"
                   >
                     <div className="flex h-8 items-center justify-between gap-3">
@@ -1025,37 +1024,57 @@ const SkillSettingsPage: React.FC = () => {
           </div>
 
           {/* 右栏：调试与预览面板 */}
-          <div className="flex w-1/2 min-h-0 flex-col h-full overflow-hidden rounded-lg border border-[var(--color-border-1)] bg-[var(--color-bg)] shadow-2xs">
-            {/* 调试面板 Header */}
-            <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border-1)] px-4 bg-[var(--color-fill-1)]/60">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary)] text-white shadow-2xs">
-                  <SendOutlined className="text-[10px]" />
-                </span>
-                <span className="text-[13px] font-semibold text-[var(--color-text-1)]">{t('chat.test')}</span>
-                {currentModelName && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-bg)] px-2.5 py-0.5 text-xs text-[var(--color-text-2)] font-mono border border-[var(--color-border-1)] shadow-2xs">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {currentModelName}
+          <div
+            className={
+              isTestChatFullscreen
+                ? 'fixed inset-0 z-[9999] bg-[var(--color-bg)] p-2.5'
+                : 'flex h-full min-h-0 w-1/2 flex-col'
+            }
+          >
+            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--color-border-1)] bg-[var(--color-bg)] shadow-2xs">
+              {/* 调试面板 Header */}
+              <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border-1)] px-4 bg-[var(--color-fill-1)]/60">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary)] text-white shadow-2xs">
+                    <SendOutlined className="text-[10px]" />
                   </span>
-                )}
+                  <span className="text-[13px] font-semibold text-[var(--color-text-1)]">{t('chat.test')}</span>
+                  {currentModelName && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-bg)] px-2.5 py-0.5 text-xs text-[var(--color-text-2)] font-mono border border-[var(--color-border-1)] shadow-2xs">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      {currentModelName}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded bg-[var(--color-bg)] border border-[var(--color-border-1)] px-2 py-0.5 text-[11px] text-[var(--color-text-3)]">
+                    实时测试环境
+                  </span>
+                  <Tooltip title={isTestChatFullscreen ? t('common.exitFullscreen') : t('common.fullscreen')}>
+                    <button
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-fill-2)] hover:text-[var(--color-text-1)]"
+                      onClick={() => setIsTestChatFullscreen((prev) => !prev)}
+                      aria-label={isTestChatFullscreen ? t('common.exitFullscreen') : t('common.fullscreen')}
+                    >
+                      {isTestChatFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                    </button>
+                  </Tooltip>
+                </div>
               </div>
-              <span className="rounded bg-[var(--color-bg)] border border-[var(--color-border-1)] px-2 py-0.5 text-[11px] text-[var(--color-text-3)]">
-                实时测试环境
-              </span>
-            </div>
 
-            {/* 调试面板 Chat 内容区 */}
-            <div className="flex-1 min-h-0 overflow-hidden bg-[var(--color-bg)]">
-              <CustomChatSSE
-                showHeader={false}
-                handleSendMessage={handleSendMessage}
-                guide={guideValue}
-                useAGUIProtocol={true}
-                initialMessages={initialMessages}
-                removePendingBotMessageOnCancel={true}
-                conversationHistoryEnabled={chatHistoryEnabled}
-              />
+              {/* 调试面板 Chat 内容区 */}
+              <div className="flex-1 min-h-0 overflow-hidden bg-[var(--color-bg)]">
+                <CustomChatSSE
+                  showHeader={false}
+                  handleSendMessage={handleSendMessage}
+                  guide={guideValue}
+                  useAGUIProtocol={true}
+                  initialMessages={initialMessages}
+                  removePendingBotMessageOnCancel={true}
+                  conversationHistoryEnabled={chatHistoryEnabled}
+                />
+              </div>
             </div>
           </div>
         </div>
