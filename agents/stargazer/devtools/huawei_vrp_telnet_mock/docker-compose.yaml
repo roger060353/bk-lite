@@ -1,0 +1,25 @@
+# QA 用：华为 VRP Telnet 采集目标（不是一套并行 BK-Lite 栈）。
+#
+# 产品栈仍用现场已有 compose：
+#   /opt/bk-lite/deploy/docker-compose
+#   /opt/bk-lite/deploy/docker-compose-ha
+# 本文件只提供一个 Scrapli asynctelnet 可登录的 VRP 替身。
+#
+# 用法见同目录 README.md。
+
+services:
+  huawei-vrp-telnet-mock:
+    build:
+      context: .
+    image: huawei-vrp-telnet-mock:qa
+    container_name: huawei-vrp-telnet-mock
+    hostname: huawei-vrp-telnet-mock
+    ports:
+      - "2323:23"
+    environment:
+      HUAWEI_VRP_TELNET_HOST: "0.0.0.0"
+      HUAWEI_VRP_TELNET_PORT: "23"
+      HUAWEI_VRP_TELNET_USERNAME: admin
+      HUAWEI_VRP_TELNET_PASSWORD: Admin@network
+      HUAWEI_VRP_TELNET_HOSTNAME: mock-vrp
+    restart: unless-stopped
