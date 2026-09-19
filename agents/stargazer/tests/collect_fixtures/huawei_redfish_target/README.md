@@ -1,95 +1,257 @@
-# 华为 iBMC 风格 Redfish 模拟目标
+# OPS：华为 iBMC 风格 Redfish 模拟目标（Japan CMDB E2E）
 
-用于讨论和开发“物理服务器 Redfish”配置采集插件。仅依赖 Python 标准库，TLS 证书生成额外需要 OpenSSL；不依赖 Docker、BMC、Postgres、Redis、NATS 或产品 Server。作为独立测试目标运行，不加入产品启动脚本、Supervisor 或 batch_init。
+**本目录是一次性运维包，不是产品功能。** 合成协议模拟器，不是华为固件、真机抓包或兼容认证。不要合入生产启动脚本、Supervisor 或 `batch_init`。对应 PR 标 **DO NOT MERGE**。
 
-## 数据与证据范围
+问题：本机 `python3 mock_server.py` 默认只监听 `127.0.0.1`，`bklite-prod` 上的 Stargazer 连不上。本包把同一套 `mock_server.py` / `inventory.py` 放进容器，监听 `0.0.0.0:443`，并加入外部网络 `bklite-prod`。
 
-本目录是**合成协议模拟器**，不是华为固件仿真器、真机抓包、完整 Redfish 合规实现或厂商兼容认证。
+采集器 `PhyscialServerRedfishInfo` **只接受 IP**，不能填容器主机名。
 
-公开资料核对于 2026-09-07：
+---
 
-- [华为官方 Huawei-iBMC-Cmdlets](https://github.com/Huawei/Huawei-iBMC-Cmdlets)：华为提供通过 Redfish 访问 iBMC 的工具；列出包括 2288H V5 和 TaiShan 200 在内的 x86/ARM 产品范围。该列表不是本插件已验证机型列表。
-- [华为鲲鹏服务器 iBMC Redfish 接口说明](https://support.huawei.com/enterprise/zh/doc/EDOC1100372764/18bfdbec)：公开检索摘录说明机架系统 ID 可为 `1`，其他形态可能是 `BladeN` 等；正文访问返回 403，不能据此宣称已逐字段核对所有资源。
-- [DMTF Redfish 协议规范](https://www.dmtf.org/sites/default/files/standards/documents/DSP0266_1.23.0.html)：资源链接、JSON、HTTP、认证和会话机制的参考。
-- [DMTF 资源说明](https://redfish.dmtf.org/schemas/DSP2046_2020.4.html)：System、Manager、Chassis 及硬件资源字段参考。
+## 0. 一次性粘贴清单
 
-`inventory.py` 使用标准 Redfish 字段生成虚构信息，所有序列号、型号后缀、固件版本明确带 `MOCK` 或 `synthetic`。Redfish/Schema 版本、容量、CPU 配置、资源路径布局是测试选择，不表示某一华为固件实际行为。不编造 Huawei OEM 字段。`multi-system` 混合 ID、跨 Chassis 的 Drive 链接和分页是鲁棒性用例，不代表 2288H V5 或 TaiShan 的实际拓扑。
+```text
+插件入口：【BETA】物理服务器 Redfish
+插件 ID：physcial_server_redfish
+模型：physcial_server
+驱动：protocol
+协议参数：collection_protocol=redfish
+
+BMC IP：docker inspect 得到的 bklite-prod 地址（禁止填 huawei-redfish-target）
+端口：443
+用户：mock-reader
+密码：mock-redfish-pw
+verify_tls：关闭（自签证书；界面会提示中间人风险，联调必须关）
+
+成功标记（默认 x86 / healthy）：
+  inst_name      = 上面填的 BMC IP
+  ip_addr        = 同上
+  brand          = Huawei
+  model          = 2288H V5 (synthetic)
+  serial_number  = MOCK-X86-SERVER-001
+  asset_code     = 空（模拟清单没有 AssetTag，首版不建 nic/disk/memory）
+```
+
+---
+
+## 1. 前置
+
+| 项 | 要求 |
+|---|---|
+| 产品栈 | 现场已有 compose 已起来（`/opt/bk-lite/deploy/docker-compose` 或 `docker-compose-ha`） |
+| 网络 | `docker network ls` 能看到 **已存在** 的 `bklite-prod` |
+| 采集节点 | Stargazer / node 已加入 `bklite-prod` |
+| 本仓库 | 能读到本目录并 `docker compose build` |
+
+`bklite-prod` 不存在时不要手动新建同名网络凑数，先确认产品栈在这台 Docker 主机上。
+
+```bash
+docker network ls | grep bklite-prod
+docker network inspect bklite-prod --format '{{range .Containers}}{{.Name}} {{end}}'
+# 输出里应有 stargazer / node 一类采集容器
+```
+
+---
+
+## 2. 拉起 Redfish 目标
+
+在**本仓库**执行，与产品栈并行，不要另起一套 BK-Lite：
+
+```bash
+cd agents/stargazer/tests/collect_fixtures/huawei_redfish_target
+docker compose up -d --build
+docker compose ps
+```
+
+若 `docker.m.daocloud.io/library/python:3.12-slim-bookworm` 拉不到，把 `Dockerfile` 的 `FROM` 改成 `python:3.12-slim-bookworm` 再 `up -d --build`。
+
+容器内监听 `0.0.0.0:443`（HTTPS）。宿主机映射 `18443:443` 只给本机冒烟，**Stargazer 不要走宿主机 IP + 18443**。
+
+### 取 BMC IP（任务必须填这个）
+
+```bash
+docker inspect -f '{{.NetworkSettings.Networks.bklite-prod.IPAddress}}' huawei-redfish-target
+```
+
+记下该地址，下文记为 `<BMC_IP>`。容器重建后 IP 可能变，要重查并改任务。
+
+### 从采集节点冒烟（在 Stargazer 容器内执行）
+
+```bash
+BMC_IP=$(docker inspect -f '{{.NetworkSettings.Networks.bklite-prod.IPAddress}}' huawei-redfish-target)
+# 下面这条请 docker exec 进 stargazer / node 再跑；-k 仅用于自签联调
+curl -sk -u mock-reader:mock-redfish-pw "https://${BMC_IP}:443/redfish/v1/"
+curl -sk -u mock-reader:mock-redfish-pw "https://${BMC_IP}:443/redfish/v1/Systems/1"
+```
+
+服务根可匿名；`Systems/1` 需要 Basic。应看到 `2288H V5 (synthetic)` 和 `MOCK-X86-SERVER-001`。响应头有 `X-Mock-Data: synthetic-not-hardware-verified`。
+
+本机（不经过 Stargazer）可：
+
+```bash
+curl -sk -u mock-reader:mock-redfish-pw https://127.0.0.1:18443/redfish/v1/Systems/1
+```
+
+---
+
+## 3. CMDB 任务填写（`physcial_server_redfish`）
+
+1. 采集对象选 **【BETA】物理服务器 Redfish**（树节点 id = `physcial_server_redfish`，`model_id` = `physcial_server`，`driver` = `protocol`）。不要选「物理服务器 SSH」或「物理服务器 IPMI」。
+2. 系统会写 `params.collection_protocol=redfish`。不要改成 `ipmi`。
+3. 实例 / BMC：
+
+| 字段 | 值 |
+|---|---|
+| `ip_addr` / BMC IP | `<BMC_IP>`（上一步 inspect，必须是 IPv4） |
+| 接入点 | 能访问 `bklite-prod` 的 Stargazer / node |
+
+4. 凭据（inline 或凭据池 `redfish_bmc` / `host/redfish`，字段相同）：
+
+| 字段 | 值 |
+|---|---|
+| `username` | `mock-reader` |
+| `password` | `mock-redfish-pw` |
+| `port` | `443` |
+| `verify_tls` | **false**（必须显式关闭） |
+
+5. 执行采集一次。
+
+常见失败：
+
+| 现象 | 原因 |
+|---|---|
+| `Redfish target must be an IP address` | 填了容器名 `huawei-redfish-target` |
+| `tls_validation_failed` | `verify_tls` 仍为 true |
+| 连接超时 / 无响应 | mock 没加入 `bklite-prod`，或任务填了 `127.0.0.1` / 宿主机 IP |
+| 401 | 用户或密码不是 `mock-reader` / `mock-redfish-pw` |
+| 仍采集到旧序列号 | 任务还指向旧 BMC IP（容器重建后 IP 变了） |
+
+---
+
+## 4. 成功标记
+
+默认 compose：`--profile x86 --scenario healthy`。首版 Redfish 只写整机身份，不创建 nic / disk / memory / gpu。
+
+| CMDB 字段 | 期望 |
+|---|---|
+| `inst_name` | 等于任务里的 `<BMC_IP>`（身份只取采集目标 IP，不用序列号） |
+| `ip_addr` | `<BMC_IP>` |
+| `brand` | `Huawei` |
+| `model` | `2288H V5 (synthetic)` |
+| `serial_number` | `MOCK-X86-SERVER-001` |
+| `asset_code` | 不出现（模拟清单无 `AssetTag`） |
+
+协议层还可核对：`GET /redfish/v1/` 的 `RedfishVersion=1.6.0`，`ComputerSystem` 一条且 `Id=1`。
+
+若改成 `--profile arm`：`model=TaiShan 200 (synthetic)`，`serial_number=MOCK-ARM-SERVER-001`。Japan E2E 用默认 x86 即可。
+
+---
+
+## 5. 停掉目标（产品栈保持不动）
+
+```bash
+cd agents/stargazer/tests/collect_fixtures/huawei_redfish_target
+docker compose down
+```
+
+---
+
+## 6. 附录：物理服务器 SSH 替身（同一现场）
+
+Redfish 只管带外身份。若还要 SSH JOB 采 nic，用另一套 fixture，不要和本容器混端口。
+
+| 项 | 值 |
+|---|---|
+| 目录 | `agents/stargazer/tests/collect_fixtures/physcial_server_ssh_target/` |
+| 说明 | 同目录 `README.md` |
+| compose | `physcial_server_ssh_target/docker-compose.yaml` |
+| 容器 | `physcial-server-ssh-target` |
+| 用户 / 密码 | `root` / `testpw` |
+| 宿主机映射 | `12226:22` |
+| 接到 `bklite-prod` 后 | 主机填容器名或该容器 IP，端口 **22** |
+| 采集节点在宿主机 | 主机 `127.0.0.1`（或宿主机 IP），端口 **12226** |
+| CMDB 入口 | 物理服务器 SSH（`physcial_server`，`driver=job`），不要选 IPMI / Redfish |
+
+把 SSH 目标接到产品网络（SSH compose 默认没写 `bklite-prod`）：
+
+```bash
+docker network connect bklite-prod physcial-server-ssh-target
+```
+
+冒烟：
+
+```bash
+sshpass -p testpw ssh -o StrictHostKeyChecking=no -p 12226 root@127.0.0.1 'echo ok'
+```
+
+---
+
+## 数据范围与本机环回（开发用）
+
+本目录仍是合成模拟器。公开资料核对于 2026-09-07：
+
+- [华为官方 Huawei-iBMC-Cmdlets](https://github.com/Huawei/Huawei-iBMC-Cmdlets)
+- [华为鲲鹏服务器 iBMC Redfish 接口说明](https://support.huawei.com/enterprise/zh/doc/EDOC1100372764/18bfdbec)
+- [DMTF Redfish 协议规范](https://www.dmtf.org/sites/default/files/standards/documents/DSP0266_1.23.0.html)
+- [DMTF 资源说明](https://redfish.dmtf.org/schemas/DSP2046_2020.4.html)
+
+`inventory.py` 字段带 `MOCK` / `synthetic`。不编造 Huawei OEM。`--scenario multi-system` / `paginated` 只测鲁棒性。
 
 | 参数 | 模拟内容 |
 | --- | --- |
 | `--profile x86` | 2288H V5 风格标签，2 个合成 x86 CPU |
 | `--profile arm` | TaiShan 200 风格标签，2 个合成 ARM CPU |
 | 两组共有 | 256 GiB 内存（8×32 GiB）、2 块 960 GB SSD、1 个 RAID1 逻辑卷、2 个 10G 主机网口、独立管理口 |
-| `--scenario healthy` | 完整清单，默认场景 |
-| `--scenario partial` | Storage 集合返回 404，其他资源正常 |
+| `--scenario healthy` | 完整清单，默认 / Japan E2E |
+| `--scenario partial` | Storage 集合返回 404 |
 | `--scenario unauthorized` | 服务根可访问；保护资源和登录返回 401 |
 | `--scenario unavailable` | Systems 集合返回 503 + Retry-After |
-| `--scenario multi-system` | 两个 System，各有不同身份和磁盘容量，用于发现资源混归属、容量累计错误 |
-| `--scenario paginated` | 内存集合分两页，使用 Members@odata.nextLink |
+| `--scenario multi-system` | 两个 System（采集器会拒绝：必须恰好一个 ComputerSystem） |
+| `--scenario paginated` | 内存集合分页 |
 
-## 启动
-
-从仓库根目录执行。需要 Python 3.8+，也可使用 `agents/stargazer/.venv/bin/python`。服务固定只监听 `127.0.0.1`；本机采集进程可访问，其他容器和远端接入点不能直接使用此环回地址。
+本机 CLI **默认仍只监听 `127.0.0.1`**。容器通过 `--bind 0.0.0.0` 对外。
 
 ```bash
 cd agents/stargazer/tests/collect_fixtures/huawei_redfish_target
-
-# 只用于这个模拟目标，密码输入不回显；不要使用设备真实凭据。
 export REDFISH_MOCK_USERNAME=mock-reader
 read -s REDFISH_MOCK_PASSWORD
 export REDFISH_MOCK_PASSWORD
-
-# 每次生成独立的短期测试证书，私钥不进入仓库。
 REDFISH_MOCK_TLS_DIR=$(mktemp -d /tmp/redfish-mock-tls.XXXXXX)
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -keyout "$REDFISH_MOCK_TLS_DIR/key.pem" \
   -out "$REDFISH_MOCK_TLS_DIR/cert.pem" -config tls.cnf
-
 python3 mock_server.py --profile x86 --scenario healthy \
   --cert "$REDFISH_MOCK_TLS_DIR/cert.pem" --key "$REDFISH_MOCK_TLS_DIR/key.pem"
 ```
 
-默认地址：`https://127.0.0.1:18443/redfish/v1/`。Ctrl+C 停止，不留下后台进程。要改场景，停止后修改 `--profile` / `--scenario` 重启。重启会清空模拟登录会话，硬件清单身份保持稳定。
-
-模拟目标的严格校验测试会将生成的 `cert.pem` 作为可信 CA，同时启用主机名校验。产品任务也允许明确关闭证书校验，用于验证自签证书场景；仅验证环回 HTTP 时，可显式运行：
+默认：`https://127.0.0.1:18443/redfish/v1/`。其它容器不能用这个环回地址。
 
 ```bash
 python3 mock_server.py --http --port 18080 --profile arm --scenario paginated
 ```
 
-Redfish 任务可填：BMC IP `127.0.0.1`、HTTPS 端口 `18443`、上述环境注入账号密码。任务默认校验 TLS 证书；使用该临时自签证书联调时，可明确关闭证书校验。HTTP 模式仅是本地模拟调试入口，不代表产品支持明文凭据传输。
-
 ## 接口行为
 
-- `GET /redfish/v1/`：公开服务根，包含 Systems / Managers / Chassis / SessionService 链接。
-- 清单 GET：接受 HTTP Basic 或有效 `X-Auth-Token`。
-- `POST /redfish/v1/SessionService/Sessions`：JSON `UserName` / `Password`；返回 201、`Location`、`X-Auth-Token`。会话保存在内存，有效期 60 秒，最多 16 个。
-- `DELETE <Location>`：使用本会话 token，返回 204；其他会话不能删除。
-- PATCH / PUT / 硬件 DELETE / 电源等 POST：405，不改变清单。仅允许模拟认证会话创建与退出。
-- 返回 `X-Mock-Data: synthetic-not-hardware-verified`。不记录密码、token、请求体或逐项访问日志。
-- 并发连接最多 8 个；socket 超时 3 秒；登录请求体最多 4 KiB；清单规模固定。没有可远程修改场景或任意文件访问的入口。
-- 暂不模拟 OEM、慢响应、固件历史数据、旧 TLS、设备限流细节、全部 Redfish 元数据和 Session 集合枚举；不宣称通过 DMTF Validator。
+- `GET /redfish/v1/`：公开服务根。
+- 清单 GET：HTTP Basic 或 `X-Auth-Token`。
+- `POST /redfish/v1/SessionService/Sessions`：201 + `X-Auth-Token`；会话内存 60 秒，最多 16 个。
+- PATCH / PUT / 硬件 DELETE / 电源 POST：405。
+- `X-Mock-Data: synthetic-not-hardware-verified`。不记密码、token、请求体。
+- 并发最多 8；socket 超时 3 秒；登录体最多 4 KiB。
 
 ## 新鲜验证
-
-从仓库根目录执行：
 
 ```bash
 agents/stargazer/.venv/bin/python -m unittest discover \
   -s agents/stargazer/tests/collect_fixtures/huawei_redfish_target -p 'test_*.py' -v
 ```
 
-测试会启动真实环回 HTTP/HTTPS 服务并在结束后关闭，TLS 私钥在临时目录生成并自动清理。若沙箱禁止 bind，需要允许环回端口测试。没有 OpenSSL 时 TLS 用例显示 skipped，不能算 TLS 已验证。
-
-测试覆盖两组清单重复读取稳定、CPU 架构区分、所有硬件详情可访问、主机/管理网卡区分、跨路径 Drive、逻辑卷关联、多 System 隔离、分页、401/404/503、Basic 与 Token 鉴权、退出/过期、错误输入、会话容量上限和禁止硬件写入。这是模拟服务的验证，不是 CMDB 去重/同步或生产 collector 的验证。
-
-2026-09-07 本机验证：10 项 unittest 全部通过，含 HTTPS（未跳过）；排除测试文件后的语句覆盖率 84%（inventory 98%、mock_server 80%）。新增 Python 文件的 Black / isort / flake8 检查通过。`cd agents/stargazer && make lint` 失败于现有入口缺少 `.pre-commit-config.yaml`，因此不能报告全模块 lint 通过。测试结束后服务已关闭，未留下常驻模拟进程。
+测试起真实环回 HTTP/HTTPS 并在结束后关闭。覆盖两组清单稳定读取、CPU 架构、401/404/503、Basic/Token、以及 `--bind 0.0.0.0` 仍可从环回访问。这不是 CMDB 入库或生产 collector 验收。
 
 ## 当前插件实现范围
 
-1. 用户入口：已增加与 SSH、IPMI 并列的“物理服务器 Redfish”，插件 ID 为 `physcial_server_redfish`，执行驱动为 `protocol`。
-2. 协议分流：任务通过持久化参数 `collection_protocol=redfish` 进入 Redfish 采集器；新 IPMI 任务显式写 `ipmi`，历史无标记协议任务兼容为 IPMI。
-3. 资产身份：SSH、IPMI、Redfish 都以采集目标 IP 生成同一个 `physcial_server.inst_name`。首次写入任务通过 `collect_task` 取得实例，其他任务受任务过滤与实例名唯一约束，不能更新或重复创建。
-4. 第一阶段字段：只读取唯一 `ComputerSystem` 的 `SerialNumber`、`Model`、`Manufacturer`、`AssetTag`，连同目标 IP 和端口写入整机；暂不创建内存、磁盘、网卡等子实例。
-5. 安全边界：只允许 HTTPS、Basic Auth、目标 IP 和同源 `/redfish/v1` 相对资源链接；证书校验默认开启并允许任务明确关闭，禁止重定向和系统代理，并限制连接数、超时和响应大小。
-6. 验证状态：模拟目标和采集器自动化测试已完成；尚未获得华为或其他国内品牌真机，因此不能宣称机型兼容认证。
+1. 入口：`physcial_server_redfish`，驱动 `protocol`。
+2. `collection_protocol=redfish` 进入 Redfish 采集器。
+3. `physcial_server.inst_name` 取采集目标 IP。
+4. 第一阶段只读唯一 `ComputerSystem` 的 `SerialNumber` / `Model` / `Manufacturer` / `AssetTag`。
+5. 只允许 HTTPS、Basic Auth、目标 IP、同源 `/redfish/v1`；证书校验默认开，任务可关。
