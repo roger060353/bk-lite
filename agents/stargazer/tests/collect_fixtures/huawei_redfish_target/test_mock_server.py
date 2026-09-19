@@ -182,6 +182,19 @@ class MockTargetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MockServer(0, "", "")
 
+    def test_bind_all_interfaces_is_reachable_from_loopback(self):
+        server = MockServer(0, "fixture-user", "fixture-password-sentinel", bind="0.0.0.0")
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+        thread.start()
+        try:
+            self.assertEqual(server.bind, "0.0.0.0")
+            self.assertEqual(server.server_address[0], "0.0.0.0")
+            self.assertEqual(request(server, "/redfish/v1/", auth=False)[0], 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
     @unittest.skipUnless(shutil.which("openssl"), "openssl is needed to generate a temporary test certificate")
     def test_https_requires_trusted_certificate_and_checks_hostname(self):
         with tempfile.TemporaryDirectory(prefix="redfish-mock-tls-") as tmp:
