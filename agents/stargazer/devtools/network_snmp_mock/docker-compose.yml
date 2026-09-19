@@ -1,0 +1,59 @@
+# OPS ONLY / DO NOT MERGE
+# 日本：加入已有 bklite-prod，被同网 Stargazer 用容器 IP:161 采集。
+# 本地无该网：BKLITE_NETWORK_EXTERNAL=false BKLITE_NETWORK_NAME=network-snmp-mock-local docker compose up -d --build
+services:
+  network-snmp-huawei:
+    build: .
+    image: bklite-network-snmp-mock:ops
+    container_name: network-snmp-huawei
+    hostname: network-snmp-huawei
+    restart: unless-stopped
+    ports:
+      - "1161:161/udp"
+    volumes:
+      - ./data/profiles/huawei.snmprec:/opt/snmpsim/data/public.snmprec:ro
+    environment:
+      SNMPSIM_DATA_DIR: /opt/snmpsim/data
+      SNMPSIM_CACHE_DIR: /tmp/snmpsim-cache
+    networks:
+      - bklite-prod
+
+  network-snmp-cisco:
+    build: .
+    image: bklite-network-snmp-mock:ops
+    container_name: network-snmp-cisco
+    hostname: network-snmp-cisco
+    restart: unless-stopped
+    ports:
+      - "1162:161/udp"
+    volumes:
+      - ./data/profiles/cisco.snmprec:/opt/snmpsim/data/public.snmprec:ro
+    environment:
+      SNMPSIM_DATA_DIR: /opt/snmpsim/data
+      SNMPSIM_CACHE_DIR: /tmp/snmpsim-cache
+    networks:
+      - bklite-prod
+
+  # 单容器双 community：docker compose --profile combined up -d --build
+  # community=huawei / cisco，宿主机 1163/udp → 容器 161
+  network-snmp-combined:
+    profiles: ["combined"]
+    build: .
+    image: bklite-network-snmp-mock:ops
+    container_name: network-snmp-combined
+    hostname: network-snmp-combined
+    restart: unless-stopped
+    ports:
+      - "1163:161/udp"
+    volumes:
+      - ./data/profiles:/opt/snmpsim/data:ro
+    environment:
+      SNMPSIM_DATA_DIR: /opt/snmpsim/data
+      SNMPSIM_CACHE_DIR: /tmp/snmpsim-cache
+    networks:
+      - bklite-prod
+
+networks:
+  bklite-prod:
+    name: ${BKLITE_NETWORK_NAME:-bklite-prod}
+    external: ${BKLITE_NETWORK_EXTERNAL:-true}
