@@ -1,0 +1,23 @@
+H3C Comware Software, Version 7.1.070, Release 7757P03
+Copyright (c) 2004-2024 New H3C Technologies Co., Ltd. All rights reserved.
+H3C S5130S-28S-EI uptime is 12 weeks, 3 days, 4 hours, 21 minutes
+Last reboot reason : Cold reboot
+
+Boot image: flash:/s5130s-cmw710-boot-r7757p03.bin
+Boot image version: 7.1.070, Release 7757P03
+  Compiled Mar 15 2024 16:22:11
+System image: flash:/s5130s-cmw710-system-r7757p03.bin
+System image version: 7.1.070, Release 7757P03
+  Compiled Mar 15 2024 16:22:11
+
+SLOT 1
+CPU 0
+Mem: 1024M  Board: 0
+BootWare: 7.1.070
+Hardware Version is Ver.A
+CPLD Version is 001
+PCB Version is Ver.A
+MDI Type is Combo
+Power A Normal
+Power B Absent
+Fan  1 Normal
