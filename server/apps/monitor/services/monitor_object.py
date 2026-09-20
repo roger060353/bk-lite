@@ -736,8 +736,9 @@ class MonitorObjectService:
     def check_monitor_instance(monitor_object_id, instance_info):
         """创建监控对象实例"""
 
-        instance_id = str(tuple([instance_info["instance_id"]]))
-        objs = MonitorInstance.objects.filter(id=instance_id).first()
+        from apps.monitor.utils.dimension import instance_id_aliases
+
+        objs = MonitorInstance.objects.filter(id__in=instance_id_aliases(instance_info["instance_id"])).first()
         if objs:
             raise BaseAppException(f"实例已存在：{instance_info['instance_name']}")
 

@@ -394,7 +394,7 @@ class TestDockerCollectConfigUniqueness:
             [{"type": "docker"}],
         )
 
-        assert [inst["instance_id"] for inst in new_instances] == ["('hash-host-b',)"]
+        assert [inst["instance_id"] for inst in new_instances] == ["hash-host-b"]
         assert existing_instances == []
         assert reclaimable_ids == []
 
@@ -419,3 +419,126 @@ class TestDockerCollectConfigUniqueness:
                 "Telegraf",
                 [{"type": "docker"}],
             )
+
+
+class TestHardwareServerInstanceIdIsBareString:
+    """IPMI/Redfish 接入不得把 instance_id 收成 "('id',)"，否则 PromQL 对不上 VM 裸标签。"""
+
+    INSTANCE_ID = "MWM2NzhhOWMzM2Nl"
+
+    def _object_and_plugin(self):
+        obj = MonitorObject.objects.create(name="Hardware Server", level="base", instance_id_keys=["instance_id"])
+        plugin = MonitorPlugin.objects.create(name="Hardware Server IPMI", collect_type="ipmi", collector="Telegraf")
+        return obj, plugin
+
+    def test_prepare_writes_bare_id_from_plain_or_tuple_literal(self):
+        obj, _ = self._object_and_plugin()
+        for raw in (self.INSTANCE_ID, f"('{self.INSTANCE_ID}',)", (self.INSTANCE_ID,)):
+            new_instances, existing_instances, reclaimable_ids = SVC._prepare_instances_for_creation(
+                [{"instance_id": raw, "instance_name": "bmc-14", "group_ids": [1]}],
+                obj.id,
+                "ipmi",
+                "Telegraf",
+                [{"type": "hardware_server"}],
+            )
+            assert [inst["instance_id"] for inst in new_instances] == [self.INSTANCE_ID]
+            assert existing_instances == []
+            assert reclaimable_ids == []
+
+    def test_prepare_reuses_legacy_tuple_row_instead_of_duplicating(self):
+        obj, plugin = self._object_and_plugin()
+        legacy_id = f"('{self.INSTANCE_ID}',)"
+        existing = MonitorInstance.objects.create(id=legacy_id, name="bmc-14", monitor_object=obj)
+        CollectConfig.objects.create(
+            id="ipmi-legacy",
+            monitor_instance=existing,
+            monitor_plugin=plugin,
+            collector="Telegraf",
+            collect_type="ipmi",
+            config_type="hardware_server",
+            file_type="toml",
+        )
+
+        with pytest.raises(BaseAppException, match="已存在采集配置"):
+            SVC._prepare_instances_for_creation(
+                [{"instance_id": self.INSTANCE_ID, "instance_name": "bmc-14", "group_ids": [1]}],
+                obj.id,
+                "ipmi",
+                "Telegraf",
+                [{"type": "hardware_server"}],
+            )
+
+    def test_create_persists_bare_monitor_and_collectconfig_ids(self, mocker):
+        obj, plugin = self._object_and_plugin()
+
+        def fake_controller(data):
+            def run():
+                for inst in data["instances"]:
+                    CollectConfig.objects.create(
+                        id=f"cfg-{inst['instance_id']}",
+                        monitor_instance_id=inst["instance_id"],
+                        monitor_plugin=plugin,
+                        collector="Telegraf",
+                        collect_type="ipmi",
+                        config_type="hardware_server",
+                        file_type="toml",
+                    )
+
+            return type("Ctrl", (), {"controller": staticmethod(run)})()
+
+        mocker.patch("apps.monitor.services.node_mgmt.Controller", fake_controller)
+        mocker.patch("apps.monitor.services.node_mgmt.InstanceFactResolver.resolve", return_value={})
+
+        created_ids = SVC.create_monitor_instance_by_node_mgmt(
+            {
+                "monitor_object_id": obj.id,
+                "collector": "Telegraf",
+                "collect_type": "ipmi",
+                "monitor_plugin_id": plugin.id,
+                "configs": [{"type": "hardware_server"}],
+                "instances": [
+                    {
+                        "instance_id": f"('{self.INSTANCE_ID}',)",
+                        "instance_name": "bmc-14",
+                        "group_ids": [1],
+                        "node_ids": ["node-1"],
+                    }
+                ],
+            }
+        )
+
+        assert created_ids == [self.INSTANCE_ID]
+        instance = MonitorInstance.objects.get(id=self.INSTANCE_ID)
+        assert instance.name == "bmc-14"
+        assert not MonitorInstance.objects.filter(id=f"('{self.INSTANCE_ID}',)").exists()
+        config = CollectConfig.objects.get(monitor_instance_id=self.INSTANCE_ID)
+        assert config.monitor_instance_id == self.INSTANCE_ID
+        assert "(" not in config.monitor_instance_id
+
+    def test_prepare_reuse_update_keeps_existing_bare_id(self):
+        """已有裸 ID 的 IPMI 实例再接入 Redfish 时，复用主键，不另写 tuple 字面量。"""
+        obj, ipmi_plugin = self._object_and_plugin()
+        existing = MonitorInstance.objects.create(id=self.INSTANCE_ID, name="bmc-14", monitor_object=obj)
+        CollectConfig.objects.create(
+            id="ipmi-bare",
+            monitor_instance=existing,
+            monitor_plugin=ipmi_plugin,
+            collector="Telegraf",
+            collect_type="ipmi",
+            config_type="hardware_server",
+            file_type="toml",
+        )
+
+        new_instances, existing_instances, reclaimable_ids = SVC._prepare_instances_for_creation(
+            [{"instance_id": f"('{self.INSTANCE_ID}',)", "instance_name": "bmc-14-renamed", "group_ids": [1]}],
+            obj.id,
+            "redfish",
+            "Telegraf",
+            [{"type": "hardware_server"}],
+        )
+
+        assert new_instances == []
+        assert [inst["instance_id"] for inst in existing_instances] == [self.INSTANCE_ID]
+        assert reclaimable_ids == []
+        assert MonitorInstance.objects.filter(id=self.INSTANCE_ID).exists()
+        assert not MonitorInstance.objects.filter(id=f"('{self.INSTANCE_ID}',)").exists()

@@ -4,14 +4,15 @@ import base64
 import pytest
 
 from apps.monitor.utils.dimension import (
-    build_safe_instance_id,
     build_dimensions,
+    build_metric_template_vars,
+    build_safe_instance_id,
     extract_monitor_instance_id,
     format_dimension_str,
-    build_metric_template_vars,
-    parse_instance_id,
-    normalize_instance_identity,
     format_dimension_value,
+    instance_id_aliases,
+    normalize_instance_identity,
+    parse_instance_id,
 )
 
 pytestmark = pytest.mark.unit
@@ -80,15 +81,18 @@ def test_build_metric_template_vars_prefix():
     assert build_metric_template_vars({"device": "eth0"}) == {"metric__device": "eth0"}
 
 
-@pytest.mark.parametrize("value,expected", [
-    (("a", "b"), ("a", "b")),
-    (["a", "b"], ("a", "b")),
-    ("('a', 'b')", ("a", "b")),
-    ("['a', 'b']", ("a", "b")),
-    ("123", (123,)),
-    ("plain", ("plain",)),
-    (42, (42,)),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (("a", "b"), ("a", "b")),
+        (["a", "b"], ("a", "b")),
+        ("('a', 'b')", ("a", "b")),
+        ("['a', 'b']", ("a", "b")),
+        ("123", (123,)),
+        ("plain", ("plain",)),
+        (42, (42,)),
+    ],
+)
 def test_parse_instance_id_variants(value, expected):
     assert parse_instance_id(value) == expected
 
@@ -102,8 +106,25 @@ def test_normalize_instance_identity_empty_raises(bad):
 def test_normalize_instance_identity_single_dim():
     res = normalize_instance_identity("abc123")
     assert res["logical_instance_value"] == "abc123"
-    assert res["storage_instance_key"] == "('abc123',)"
+    assert res["storage_instance_key"] == "abc123"
     assert res["raw_input"] == "abc123"
+
+
+def test_normalize_instance_identity_strips_single_element_tuple_literal():
+    res = normalize_instance_identity("('MWM2NzhhOWMzM2Nl',)")
+    assert res["logical_instance_value"] == "MWM2NzhhOWMzM2Nl"
+    assert res["storage_instance_key"] == "MWM2NzhhOWMzM2Nl"
+
+
+def test_instance_id_aliases_include_legacy_tuple_form():
+    assert instance_id_aliases("MWM2NzhhOWMzM2Nl") == [
+        "MWM2NzhhOWMzM2Nl",
+        "('MWM2NzhhOWMzM2Nl',)",
+    ]
+    assert instance_id_aliases("('MWM2NzhhOWMzM2Nl',)") == [
+        "MWM2NzhhOWMzM2Nl",
+        "('MWM2NzhhOWMzM2Nl',)",
+    ]
 
 
 def test_normalize_instance_identity_multi_dim_keeps_full_tuple():

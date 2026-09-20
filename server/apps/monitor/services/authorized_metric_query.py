@@ -6,7 +6,7 @@ from apps.monitor.constants.permission import PermissionConstants
 from apps.monitor.models import Metric, MonitorInstance, MonitorObject
 from apps.monitor.services.metric_query_contract import AuthorizedMetricQueryError, build_instance_matchers, escape_metric_label_value
 from apps.monitor.services.metrics import Metrics
-from apps.monitor.utils.dimension import normalize_instance_identity, parse_instance_id
+from apps.monitor.utils.dimension import instance_id_aliases, normalize_instance_identity, parse_instance_id
 
 ALLOWED_AGGREGATIONS = {
     # AVG 按实例 + 已声明维度聚合，丢掉 collection_task_id / 采集器 host 等未声明标签。
@@ -153,7 +153,17 @@ class AuthorizedMetricQueryService:
                 code="instance_ids_required",
             )
 
-        instance_ids = tuple(dict.fromkeys(_storage_instance_id(value) for value in raw_instance_ids if value not in (None, "")))
+        canonical_ids = []
+        lookup_ids = []
+        for value in raw_instance_ids:
+            if value in (None, ""):
+                continue
+            canonical = _storage_instance_id(value)
+            if canonical not in canonical_ids:
+                canonical_ids.append(canonical)
+            lookup_ids.extend(instance_id_aliases(value))
+        instance_ids = tuple(canonical_ids)
+        lookup_ids = tuple(dict.fromkeys(lookup_ids))
         if not instance_ids:
             raise AuthorizedMetricQueryError(
                 "instance_ids 不能为空",
@@ -186,12 +196,13 @@ class AuthorizedMetricQueryService:
 
         authorized_ids = set(
             authorized_qs.filter(
-                id__in=instance_ids,
+                id__in=lookup_ids,
                 monitor_object_id=monitor_object_id,
                 is_deleted=False,
             ).values_list("id", flat=True)
         )
-        if authorized_ids != set(instance_ids):
+        authorized_canonical = {_storage_instance_id(item) for item in authorized_ids}
+        if authorized_canonical != set(instance_ids):
             raise AuthorizedMetricQueryError(
                 "无权访问所选监控实例",
                 code="monitor_instance_forbidden",

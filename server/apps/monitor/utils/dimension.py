@@ -10,17 +10,12 @@ class ScopedInstanceMatcher:
 
     def __init__(self, object_instance_id_keys: list, scoped_instance_ids):
         self.object_instance_id_keys = list(object_instance_id_keys or [])
-        self.scoped_instance_values = {
-            instance_id: parse_instance_id(instance_id)
-            for instance_id in scoped_instance_ids
-        }
+        self.scoped_instance_values = {instance_id: parse_instance_id(instance_id) for instance_id in scoped_instance_ids}
         self._indexes = {}
 
     def resolve(self, instance_values: tuple, instance_value_keys: list) -> str:
         dimensions = build_dimensions(instance_values, instance_value_keys)
-        comparable_keys = [
-            key for key in dimensions if key in self.object_instance_id_keys
-        ]
+        comparable_keys = [key for key in dimensions if key in self.object_instance_id_keys]
         if not comparable_keys:
             return ""
 
@@ -35,15 +30,11 @@ class ScopedInstanceMatcher:
 
     def _build_index(self, comparable_keys: list) -> dict:
         match_index = {}
-        positions = [
-            self.object_instance_id_keys.index(key) for key in comparable_keys
-        ]
+        positions = [self.object_instance_id_keys.index(key) for key in comparable_keys]
         for candidate_id, candidate_values in self.scoped_instance_values.items():
             if any(position >= len(candidate_values) for position in positions):
                 continue
-            identity = tuple(
-                str(candidate_values[position]) for position in positions
-            )
+            identity = tuple(str(candidate_values[position]) for position in positions)
             # 空字符串是歧义哨兵；同一身份出现两次后不再猜测归属。
             match_index[identity] = "" if identity in match_index else candidate_id
         return match_index
@@ -58,9 +49,7 @@ def build_safe_instance_id(*parts: Any) -> str:
     return base64.urlsafe_b64encode(raw_value.encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def build_dimensions(
-    instance_id: Union[tuple, str], instance_id_keys: list = None
-) -> dict:
+def build_dimensions(instance_id: Union[tuple, str], instance_id_keys: list = None) -> dict:
     """从实例ID构建维度字典
 
     Args:
@@ -82,10 +71,7 @@ def build_dimensions(
     if not isinstance(instance_id, tuple):
         return {}
 
-    return {
-        instance_id_keys[i]: instance_id[i]
-        for i in range(min(len(instance_id_keys), len(instance_id)))
-    }
+    return {instance_id_keys[i]: instance_id[i] for i in range(min(len(instance_id_keys), len(instance_id)))}
 
 
 def extract_monitor_instance_id(instance_id: Union[tuple, str]) -> str:
@@ -182,8 +168,8 @@ def normalize_instance_identity(instance_id: Any) -> dict:
         - raw_input: 原始输入值
         - logical_instance_value: 逻辑实例值（第一维）
         - storage_instance_key: 存储键。
-          单维实例保持为 "('value',)"，
-          多维实例保持完整 tuple 串，如 "('vc-a', 'host-1')"
+          单维实例一律用裸字符串（如 "abc123"），写入时剥掉 "('abc123',)" 这类
+          单元素 tuple/list 字面量；多维实例保持完整 tuple 串，如 "('vc-a', 'host-1')"
 
     Raises:
         ValueError: instance_id 为空或解析失败
@@ -196,12 +182,24 @@ def normalize_instance_identity(instance_id: Any) -> dict:
         raise ValueError(f"invalid instance_id: {instance_id}")
 
     logical_value = str(parsed[0])
-    storage_instance_key = str(parsed) if len(parsed) > 1 else extract_monitor_instance_id(parsed)
+    storage_instance_key = str(parsed) if len(parsed) > 1 else logical_value
     return {
         "raw_input": instance_id,
         "logical_instance_value": logical_value,
         "storage_instance_key": storage_instance_key,
     }
+
+
+def instance_id_aliases(instance_id: Any) -> list[str]:
+    """返回写入优先的存储键，以及单维遗留 tuple 字面量，供读写两边对齐。"""
+    identity = normalize_instance_identity(instance_id)
+    preferred = identity["storage_instance_key"]
+    aliases = [preferred]
+    if len(parse_instance_id(instance_id)) == 1:
+        legacy = str((identity["logical_instance_value"],))
+        if legacy not in aliases:
+            aliases.append(legacy)
+    return aliases
 
 
 def format_dimension_value(

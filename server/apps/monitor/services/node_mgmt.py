@@ -21,7 +21,7 @@ from apps.monitor.services.host_deployment import HostDeploymentStatus
 from apps.monitor.services.instance_facts import InstanceFactResolver
 from apps.monitor.services.website_config import validate_rendered_website_config
 from apps.monitor.utils.config_format import ConfigFormat
-from apps.monitor.utils.dimension import build_safe_instance_id, normalize_instance_identity, parse_instance_id
+from apps.monitor.utils.dimension import build_safe_instance_id, instance_id_aliases, normalize_instance_identity, parse_instance_id
 from apps.monitor.utils.node_selector import normalize_node_selector
 from apps.monitor.utils.plugin_controller import Controller
 from apps.node_mgmt.constants.controller import ControllerConstants
@@ -513,6 +513,23 @@ class InstanceConfigService:
         return []
 
     @staticmethod
+    def _existing_instance_ids_by_alias(raw_ids):
+        """把裸 ID 与遗留 tuple 字面量都映射到库里实际主键。"""
+        lookup_ids = []
+        for raw in raw_ids:
+            if raw in (None, ""):
+                continue
+            lookup_ids.extend(instance_id_aliases(raw))
+        if not lookup_ids:
+            return {}
+        existing_ids = MonitorInstance.objects.select_for_update().filter(id__in=lookup_ids).values_list("id", flat=True)
+        alias_map = {}
+        for existing_id in existing_ids:
+            for alias in instance_id_aliases(existing_id):
+                alias_map[alias] = existing_id
+        return alias_map
+
+    @staticmethod
     def _prepare_instances_for_creation(instances, monitor_object_id, collect_type, collector, configs):
         """准备待创建实例:格式化ID、检查已存在实例、分类处理、校验配置冲突
 
@@ -529,13 +546,14 @@ class InstanceConfigService:
         Raises:
             BaseAppException: 当配置已存在时抛出异常
         """
-        # 格式化实例ID：优先使用 Host adapter 已计算好的 storage_instance_key，否则沿用旧逻辑
+        # 单维实例写入裸字符串，剥掉 "('id',)" 这类 tuple/list 字面量；已有墓碑仍按别名复用。
+        existing_id_by_alias = InstanceConfigService._existing_instance_ids_by_alias(
+            instance.get("storage_instance_key") or instance["instance_id"] for instance in instances
+        )
         for instance in instances:
-            storage_key = instance.get("storage_instance_key")
-            if storage_key:
-                instance["instance_id"] = storage_key
-            else:
-                instance["instance_id"] = str((instance["instance_id"],))
+            raw = instance.get("storage_instance_key") or instance["instance_id"]
+            preferred = normalize_instance_identity(raw)["storage_instance_key"]
+            instance["instance_id"] = existing_id_by_alias.get(preferred, preferred)
 
         instance_ids = [inst["instance_id"] for inst in instances]
         seen_ids = set()
