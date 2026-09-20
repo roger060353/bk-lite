@@ -6,7 +6,7 @@ from apps.monitor.constants.permission import PermissionConstants
 from apps.monitor.models import Metric, MonitorInstance, MonitorObject
 from apps.monitor.services.metric_query_contract import AuthorizedMetricQueryError, build_instance_matchers, escape_metric_label_value
 from apps.monitor.services.metrics import Metrics
-from apps.monitor.utils.dimension import normalize_instance_identity, parse_instance_id
+from apps.monitor.utils.dimension import candidate_instance_ids, normalize_instance_identity, parse_instance_id
 
 ALLOWED_AGGREGATIONS = {
     # AVG 按实例 + 已声明维度聚合，丢掉 collection_task_id / 采集器 host 等未声明标签。
@@ -38,6 +38,25 @@ def _storage_instance_id(value) -> str:
         return normalize_instance_identity(value)["storage_instance_key"]
     except ValueError:
         return str(value)
+
+
+def _prefer_authorized_instance_id(raw_value, authorized_ids: set, candidates: list[str]) -> str | None:
+    """双行并存时优先绑定 clean 主键（CollectConfig/组织只挂在 clean 上）。"""
+    try:
+        parsed = parse_instance_id(raw_value)
+    except Exception:
+        parsed = ()
+    if len(parsed) == 1:
+        logical = str(parsed[0])
+        if logical in authorized_ids:
+            return logical
+    raw_text = str(raw_value).strip()
+    if raw_text in authorized_ids:
+        return raw_text
+    for candidate in candidates:
+        if candidate in authorized_ids:
+            return candidate
+    return None
 
 
 def _metric_instance_id_keys(metric: Metric) -> list[str]:
@@ -153,8 +172,17 @@ class AuthorizedMetricQueryService:
                 code="instance_ids_required",
             )
 
-        instance_ids = tuple(dict.fromkeys(_storage_instance_id(value) for value in raw_instance_ids if value not in (None, "")))
-        if not instance_ids:
+        requested = []
+        seen_identities = set()
+        for value in raw_instance_ids:
+            if value in (None, ""):
+                continue
+            identity = _storage_instance_id(value)
+            if identity in seen_identities:
+                continue
+            seen_identities.add(identity)
+            requested.append(value)
+        if not requested:
             raise AuthorizedMetricQueryError(
                 "instance_ids 不能为空",
                 code="instance_ids_required",
@@ -184,19 +212,36 @@ class AuthorizedMetricQueryService:
                 id_key="id__in",
             )
 
+        lookup_ids = []
+        seen_lookup = set()
+        for value in requested:
+            candidates = candidate_instance_ids(value) or [_storage_instance_id(value)]
+            for candidate in candidates:
+                if candidate not in seen_lookup:
+                    seen_lookup.add(candidate)
+                    lookup_ids.append(candidate)
+
         authorized_ids = set(
             authorized_qs.filter(
-                id__in=instance_ids,
+                id__in=lookup_ids,
                 monitor_object_id=monitor_object_id,
                 is_deleted=False,
             ).values_list("id", flat=True)
         )
-        if authorized_ids != set(instance_ids):
-            raise AuthorizedMetricQueryError(
-                "无权访问所选监控实例",
-                code="monitor_instance_forbidden",
-            )
-        return monitor_object, instance_ids
+        resolved_ids = []
+        seen_resolved = set()
+        for value in requested:
+            candidates = candidate_instance_ids(value) or [_storage_instance_id(value)]
+            matched = _prefer_authorized_instance_id(value, authorized_ids, candidates)
+            if matched is None:
+                raise AuthorizedMetricQueryError(
+                    "无权访问所选监控实例",
+                    code="monitor_instance_forbidden",
+                )
+            if matched not in seen_resolved:
+                seen_resolved.add(matched)
+                resolved_ids.append(matched)
+        return monitor_object, tuple(resolved_ids)
 
     def _authorize_host_process_scope(self, monitor_object_id, scope) -> tuple[MonitorObject, tuple[str, ...], list[str]]:
         if not isinstance(scope, dict) or scope.get("type") != "host_process":
@@ -300,6 +345,8 @@ class AuthorizedMetricQueryService:
         else:
             collection_interval = None
 
+        card_budget = _normalize_bool(payload.get("card_budget"), field="card_budget")
+
         metric = None
         if capability_id:
             if payload.get("filters") not in (None, [], "") or payload.get("aggregation") not in (None, ""):
@@ -352,7 +399,7 @@ class AuthorizedMetricQueryService:
             step=step,
             detect_gaps=_normalize_bool(payload.get("detect_gaps"), field="detect_gaps"),
             collection_interval=collection_interval,
-            card_budget=_normalize_bool(payload.get("card_budget"), field="card_budget"),
+            card_budget=card_budget,
         )
 
     def query_range(self, payload: dict) -> dict:

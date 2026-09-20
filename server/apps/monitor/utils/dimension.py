@@ -169,6 +169,29 @@ def parse_instance_id(instance_id: Any) -> tuple:
     return (instance_id,)
 
 
+def candidate_instance_ids(raw_instance_id: Any) -> list:
+    """Lookup 候选主键：存储键优先，其次原始输入（兼容未补齐 tuple 的遗留 PK）。"""
+    text = str(raw_instance_id or "").strip()
+    if not text:
+        return []
+    try:
+        identity = normalize_instance_identity(text)
+    except ValueError:
+        return []
+    keys = []
+    seen = set()
+    parsed = parse_instance_id(text)
+    # 单维才把 logical 值当作另一形态主键；多维 logical 是父实例，不能当兄弟行。
+    aliases = [identity["storage_instance_key"], text]
+    if len(parsed) == 1:
+        aliases.append(identity["logical_instance_value"])
+    for key in aliases:
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
 def normalize_instance_identity(instance_id: Any) -> dict:
     """统一解析实例ID，兼容原始值与遗留的tuple字符串格式。
 

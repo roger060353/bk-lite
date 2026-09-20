@@ -21,7 +21,12 @@ from apps.monitor.services.host_deployment import HostDeploymentStatus
 from apps.monitor.services.instance_facts import InstanceFactResolver
 from apps.monitor.services.website_config import validate_rendered_website_config
 from apps.monitor.utils.config_format import ConfigFormat
-from apps.monitor.utils.dimension import build_safe_instance_id, normalize_instance_identity, parse_instance_id
+from apps.monitor.utils.dimension import (
+    build_safe_instance_id,
+    candidate_instance_ids,
+    normalize_instance_identity,
+    parse_instance_id,
+)
 from apps.monitor.utils.node_selector import normalize_node_selector
 from apps.monitor.utils.plugin_controller import Controller
 from apps.node_mgmt.constants.controller import ControllerConstants
@@ -537,6 +542,14 @@ class InstanceConfigService:
             else:
                 instance["instance_id"] = str((instance["instance_id"],))
 
+        lookup_ids = []
+        seen_lookup = set()
+        for inst in instances:
+            for candidate in candidate_instance_ids(inst["instance_id"]) or [inst["instance_id"]]:
+                if candidate not in seen_lookup:
+                    seen_lookup.add(candidate)
+                    lookup_ids.append(candidate)
+
         instance_ids = [inst["instance_id"] for inst in instances]
         seen_ids = set()
         duplicate_ids = set()
@@ -549,9 +562,16 @@ class InstanceConfigService:
 
         # 主键是全局唯一的，必须跨监控对象检查占用。调用方保证当前位于事务内。
         existing_instances_qs = (
-            MonitorInstance.objects.select_for_update().filter(id__in=instance_ids).values_list("id", "is_deleted", "monitor_object_id")
+            MonitorInstance.objects.select_for_update().filter(id__in=lookup_ids).values_list("id", "is_deleted", "monitor_object_id")
         )
         existing_map = {row[0]: {"is_deleted": row[1], "monitor_object_id": row[2]} for row in existing_instances_qs}
+        # 已有 clean 行时把本次 tuple 主键改写成 clean，禁止再插兄弟行。
+        for inst in instances:
+            aliases = candidate_instance_ids(inst["instance_id"]) or [inst["instance_id"]]
+            existing_alias = next((alias for alias in reversed(aliases) if alias in existing_map), None)
+            if existing_alias:
+                inst["instance_id"] = existing_alias
+        instance_ids = [inst["instance_id"] for inst in instances]
         reclaimable_ids = {instance_id for instance_id, state in existing_map.items() if state["is_deleted"]}
 
         active_cross_object_ids = sorted(
