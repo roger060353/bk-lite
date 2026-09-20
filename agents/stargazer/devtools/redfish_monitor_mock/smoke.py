@@ -43,6 +43,12 @@ def _named(text: str, metric: str) -> list[str]:
     return [line for line in text.splitlines() if line.startswith(f"{metric}{{")]
 
 
+def _line_value(line: str) -> float:
+    payload = line.rsplit("}", 1)[-1].strip()
+    token = payload.split()[0]
+    return float(token)
+
+
 async def collect_against(server: RedfishMonitorMockServer) -> str:
     from tasks.collectors.redfish_collector import RedfishCollector
 
@@ -65,7 +71,7 @@ def assert_collect_text(text: str) -> None:
     for name, value in EXPECTED_VALUES.items():
         lines = _named(text, name)
         assert lines, name
-        assert any(f" {value} " in line or line.endswith(f" {value}") for line in lines), (name, value, lines)
+        assert any(_line_value(line) == float(value) for line in lines), (name, value, lines)
     assert 'name="System Board Inlet Temp"' in text
     assert 'name="PS1 Status"' in text
     assert 'name="SSD 0"' in text

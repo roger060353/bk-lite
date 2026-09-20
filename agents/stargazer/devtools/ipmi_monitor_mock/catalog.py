@@ -61,7 +61,7 @@ DEFAULT_PRIVILEGE = "admin"
 
 
 def _threshold(m: int, b: int, k1: int, k2: int, raw: int) -> float:
-    return (m * raw + b * (10**k1)) * (10**k2)
+    return round((m * raw + b * (10**k1)) * (10.0**k2), 6)
 
 
 def analog(

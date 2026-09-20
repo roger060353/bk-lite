@@ -28,7 +28,7 @@
       "metric": "ipmi_sensor_value",
       "name": "inlet_temp",
       "unit": "degrees_c",
-      "value": 22,
+      "value": 22.0,
       "status": "ok",
       "display_metric": "ipmi_temperature_celsius"
     },
@@ -36,7 +36,7 @@
       "metric": "ipmi_sensor_value",
       "name": "cpu1_temp",
       "unit": "degrees_c",
-      "value": 45,
+      "value": 45.0,
       "status": "ok",
       "display_metric": "ipmi_temperature_celsius"
     },
@@ -44,7 +44,7 @@
       "metric": "ipmi_sensor_value",
       "name": "exhaust_temp",
       "unit": "degrees_c",
-      "value": 33,
+      "value": 33.0,
       "status": "ok",
       "display_metric": "ipmi_temperature_celsius"
     },
@@ -52,7 +52,7 @@
       "metric": "ipmi_sensor_value",
       "name": "fan1",
       "unit": "rpm",
-      "value": 4200,
+      "value": 4200.0,
       "status": "ok",
       "display_metric": "ipmi_fan_speed_rpm"
     },
@@ -60,7 +60,7 @@
       "metric": "ipmi_sensor_value",
       "name": "fan2",
       "unit": "rpm",
-      "value": 3900,
+      "value": 3900.0,
       "status": "ok",
       "display_metric": "ipmi_fan_speed_rpm"
     },
@@ -68,7 +68,7 @@
       "metric": "ipmi_sensor_value",
       "name": "pwr_consumption",
       "unit": "watts",
-      "value": 280,
+      "value": 280.0,
       "status": "ok",
       "display_metric": "ipmi_power_watts"
     },
@@ -76,7 +76,7 @@
       "metric": "ipmi_sensor_value",
       "name": "voltage_12v",
       "unit": "volts",
-      "value": 12.100000000000001,
+      "value": 12.1,
       "status": "ok",
       "display_metric": "ipmi_voltage_volts"
     },
@@ -84,7 +84,7 @@
       "metric": "ipmi_sensor_value",
       "name": "voltage_3_3v",
       "unit": "volts",
-      "value": 3.3000000000000003,
+      "value": 3.3,
       "status": "ok",
       "display_metric": "ipmi_voltage_volts"
     },
@@ -118,11 +118,11 @@
       "b": 0,
       "k1": 0,
       "k2": 0,
-      "value": 22,
+      "value": 22.0,
       "ipmitool_unit": "degrees C",
       "display_metric": "ipmi_temperature_celsius",
       "upper_critical_raw": 47,
-      "upper_critical": 47
+      "upper_critical": 47.0
     },
     {
       "kind": "analog",
@@ -139,11 +139,11 @@
       "b": 0,
       "k1": 0,
       "k2": 0,
-      "value": 45,
+      "value": 45.0,
       "ipmitool_unit": "degrees C",
       "display_metric": "ipmi_temperature_celsius",
       "upper_critical_raw": 98,
-      "upper_critical": 98
+      "upper_critical": 98.0
     },
     {
       "kind": "analog",
@@ -160,11 +160,11 @@
       "b": 0,
       "k1": 0,
       "k2": 0,
-      "value": 33,
+      "value": 33.0,
       "ipmitool_unit": "degrees C",
       "display_metric": "ipmi_temperature_celsius",
       "upper_critical_raw": 80,
-      "upper_critical": 80
+      "upper_critical": 80.0
     },
     {
       "kind": "analog",
@@ -181,7 +181,7 @@
       "b": 0,
       "k1": 0,
       "k2": 2,
-      "value": 4200,
+      "value": 4200.0,
       "ipmitool_unit": "RPM",
       "display_metric": "ipmi_fan_speed_rpm"
     },
@@ -200,7 +200,7 @@
       "b": 0,
       "k1": 0,
       "k2": 2,
-      "value": 3900,
+      "value": 3900.0,
       "ipmitool_unit": "RPM",
       "display_metric": "ipmi_fan_speed_rpm"
     },
@@ -219,7 +219,7 @@
       "b": 0,
       "k1": 0,
       "k2": 1,
-      "value": 280,
+      "value": 280.0,
       "ipmitool_unit": "Watts",
       "display_metric": "ipmi_power_watts"
     },
@@ -238,7 +238,7 @@
       "b": 0,
       "k1": 0,
       "k2": -1,
-      "value": 12.100000000000001,
+      "value": 12.1,
       "ipmitool_unit": "Volts",
       "display_metric": "ipmi_voltage_volts"
     },
@@ -257,7 +257,7 @@
       "b": 0,
       "k1": 0,
       "k2": -1,
-      "value": 3.3000000000000003,
+      "value": 3.3,
       "ipmitool_unit": "Volts",
       "display_metric": "ipmi_voltage_volts"
     },
