@@ -166,9 +166,7 @@ def test_default_avg_aggregates_by_instance_and_declared_dimensions(mocker):
         }
     )
 
-    assert vm_query.call_args.args[0] == (
-        'avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id, mode)'
-    )
+    assert vm_query.call_args.args[0] == ('avg(cpu_usage{instance_id=~"allowed\\\\-host"}) by (instance_id, mode)')
 
 
 def test_host_process_scope_authorizes_parent_host_and_builds_process_matchers(mocker):

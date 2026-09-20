@@ -10,17 +10,12 @@ class ScopedInstanceMatcher:
 
     def __init__(self, object_instance_id_keys: list, scoped_instance_ids):
         self.object_instance_id_keys = list(object_instance_id_keys or [])
-        self.scoped_instance_values = {
-            instance_id: parse_instance_id(instance_id)
-            for instance_id in scoped_instance_ids
-        }
+        self.scoped_instance_values = {instance_id: parse_instance_id(instance_id) for instance_id in scoped_instance_ids}
         self._indexes = {}
 
     def resolve(self, instance_values: tuple, instance_value_keys: list) -> str:
         dimensions = build_dimensions(instance_values, instance_value_keys)
-        comparable_keys = [
-            key for key in dimensions if key in self.object_instance_id_keys
-        ]
+        comparable_keys = [key for key in dimensions if key in self.object_instance_id_keys]
         if not comparable_keys:
             return ""
 
@@ -35,15 +30,11 @@ class ScopedInstanceMatcher:
 
     def _build_index(self, comparable_keys: list) -> dict:
         match_index = {}
-        positions = [
-            self.object_instance_id_keys.index(key) for key in comparable_keys
-        ]
+        positions = [self.object_instance_id_keys.index(key) for key in comparable_keys]
         for candidate_id, candidate_values in self.scoped_instance_values.items():
             if any(position >= len(candidate_values) for position in positions):
                 continue
-            identity = tuple(
-                str(candidate_values[position]) for position in positions
-            )
+            identity = tuple(str(candidate_values[position]) for position in positions)
             # 空字符串是歧义哨兵；同一身份出现两次后不再猜测归属。
             match_index[identity] = "" if identity in match_index else candidate_id
         return match_index
@@ -58,9 +49,7 @@ def build_safe_instance_id(*parts: Any) -> str:
     return base64.urlsafe_b64encode(raw_value.encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def build_dimensions(
-    instance_id: Union[tuple, str], instance_id_keys: list = None
-) -> dict:
+def build_dimensions(instance_id: Union[tuple, str], instance_id_keys: list = None) -> dict:
     """从实例ID构建维度字典
 
     Args:
@@ -82,10 +71,7 @@ def build_dimensions(
     if not isinstance(instance_id, tuple):
         return {}
 
-    return {
-        instance_id_keys[i]: instance_id[i]
-        for i in range(min(len(instance_id_keys), len(instance_id)))
-    }
+    return {instance_id_keys[i]: instance_id[i] for i in range(min(len(instance_id_keys), len(instance_id)))}
 
 
 def extract_monitor_instance_id(instance_id: Union[tuple, str]) -> str:

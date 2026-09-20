@@ -21,12 +21,7 @@ from apps.monitor.services.host_deployment import HostDeploymentStatus
 from apps.monitor.services.instance_facts import InstanceFactResolver
 from apps.monitor.services.website_config import validate_rendered_website_config
 from apps.monitor.utils.config_format import ConfigFormat
-from apps.monitor.utils.dimension import (
-    build_safe_instance_id,
-    instance_id_aliases,
-    normalize_instance_identity,
-    parse_instance_id,
-)
+from apps.monitor.utils.dimension import build_safe_instance_id, instance_id_aliases, normalize_instance_identity, parse_instance_id
 from apps.monitor.utils.node_selector import normalize_node_selector
 from apps.monitor.utils.plugin_controller import Controller
 from apps.node_mgmt.constants.controller import ControllerConstants
