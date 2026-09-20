@@ -11,6 +11,7 @@ from apps.monitor.utils.dimension import (
     build_metric_template_vars,
     parse_instance_id,
     normalize_instance_identity,
+    candidate_instance_ids,
     format_dimension_value,
 )
 
@@ -115,6 +116,13 @@ def test_normalize_instance_identity_multi_dim_keeps_full_tuple():
 def test_normalize_instance_identity_invalid_first_empty_raises():
     with pytest.raises(ValueError, match="invalid instance_id"):
         normalize_instance_identity("('', 'x')")
+
+
+def test_candidate_instance_ids_lists_storage_key_then_clean_pk():
+    assert candidate_instance_ids("172.18.0.12") == ["('172.18.0.12',)", "172.18.0.12"]
+    assert candidate_instance_ids("('172.18.0.12',)") == ["('172.18.0.12',)", "172.18.0.12"]
+    assert candidate_instance_ids("('vc-a', 'host-1')") == ["('vc-a', 'host-1')"]
+    assert candidate_instance_ids("") == []
 
 
 def test_format_dimension_value_default_order():

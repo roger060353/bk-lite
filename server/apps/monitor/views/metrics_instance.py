@@ -15,7 +15,7 @@ from apps.monitor.services.authorized_metric_query import AuthorizedMetricQueryE
 from apps.monitor.services.flow_conversations import query_flow_conversation_page
 from apps.monitor.services.metrics import Metrics as MetricsService
 from apps.monitor.services.metrics import MetricsQueryBudgetExceeded
-from apps.monitor.utils.dimension import normalize_instance_identity
+from apps.monitor.utils.dimension import candidate_instance_ids, normalize_instance_identity
 from apps.monitor.utils.unit_converter import UnitConverter
 
 
@@ -268,9 +268,10 @@ class MetricsInstanceViewSet(viewsets.ViewSet):
             raise BaseAppException("monitor_object_id, metric_id, instance_id are required")
 
         try:
-            instance_id = normalize_instance_identity(instance_id)["storage_instance_key"]
+            storage_instance_id = normalize_instance_identity(instance_id)["storage_instance_key"]
         except ValueError as exc:
             raise ValidationAppException(str(exc)) from exc
+        lookup_ids = candidate_instance_ids(instance_id) or [storage_instance_id]
 
         current_team = get_current_team(request)
         include_children = request.COOKIES.get("include_children", "0") == "1"
@@ -288,9 +289,10 @@ class MetricsInstanceViewSet(viewsets.ViewSet):
                 permission,
                 team_key="monitorinstanceorganization__organization__in",
                 id_key="id__in",
-            ).filter(id=instance_id)
+            ).filter(id__in=lookup_ids)
             if not authorized_qs.exists():
                 raise ForbiddenException("无权访问该监控实例")
+        instance_id = storage_instance_id
 
         metric = Metric.objects.filter(id=metric_id, monitor_object_id=monitor_object_id).select_related("monitor_object").first()
         if not metric:

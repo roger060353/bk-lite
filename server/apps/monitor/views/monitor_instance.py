@@ -24,7 +24,7 @@ from apps.monitor.services.monitor_instance import InstanceSearch
 from apps.monitor.services.monitor_instance_removal import MonitorInstanceRemovalService
 from apps.monitor.services.monitor_object import MonitorObjectService
 from apps.monitor.services.node_mgmt import InstanceConfigService
-from apps.monitor.utils.dimension import normalize_instance_identity, parse_instance_id
+from apps.monitor.utils.dimension import candidate_instance_ids, normalize_instance_identity, parse_instance_id
 from apps.monitor.utils.pagination import parse_page_params
 
 # 已选资产回填等批量精确查询的单次上限，避免超长 URL / 过大 IN 子句。
@@ -83,21 +83,8 @@ def _parse_instance_id_filters(query_params):
 
 
 def _candidate_instance_ids(raw_instance_id):
-    """Lookup 候选主键：存储键优先，其次原始输入（兼容未补齐 tuple 的遗留 PK）。"""
-    text = str(raw_instance_id or "").strip()
-    if not text:
-        return []
-    try:
-        storage_key = normalize_instance_identity(text)["storage_instance_key"]
-    except ValueError:
-        return []
-    keys = []
-    seen = set()
-    for key in (storage_key, text):
-        if key and key not in seen:
-            seen.add(key)
-            keys.append(key)
-    return keys
+    """兼容旧调用点：与 dimension.candidate_instance_ids 同一套候选主键。"""
+    return candidate_instance_ids(raw_instance_id)
 
 
 def _build_actor_context(request):

@@ -419,3 +419,20 @@ class TestDockerCollectConfigUniqueness:
                 "Telegraf",
                 [{"type": "docker"}],
             )
+
+    def test_existing_clean_pk_reuses_row_instead_of_creating_tuple_sibling(self):
+        obj, plugin = self._setup()
+        MonitorInstance.objects.create(id="hash-host-a", name="docker-clean", monitor_object=obj)
+
+        new_instances, existing_instances, reclaimable_ids = SVC._prepare_instances_for_creation(
+            [{"instance_id": "hash-host-a", "instance_name": "docker-10.20.5.200", "group_ids": [1]}],
+            obj.id,
+            "docker",
+            "Telegraf",
+            [{"type": "docker-extra"}],
+        )
+
+        assert new_instances == []
+        assert [inst["instance_id"] for inst in existing_instances] == ["hash-host-a"]
+        assert reclaimable_ids == []
+        assert not MonitorInstance.objects.filter(id="('hash-host-a',)").exists()
