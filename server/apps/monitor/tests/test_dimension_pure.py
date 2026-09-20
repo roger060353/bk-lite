@@ -11,6 +11,7 @@ from apps.monitor.utils.dimension import (
     build_metric_template_vars,
     parse_instance_id,
     normalize_instance_identity,
+    instance_id_aliases,
     format_dimension_value,
 )
 
@@ -102,8 +103,25 @@ def test_normalize_instance_identity_empty_raises(bad):
 def test_normalize_instance_identity_single_dim():
     res = normalize_instance_identity("abc123")
     assert res["logical_instance_value"] == "abc123"
-    assert res["storage_instance_key"] == "('abc123',)"
+    assert res["storage_instance_key"] == "abc123"
     assert res["raw_input"] == "abc123"
+
+
+def test_normalize_instance_identity_strips_single_element_tuple_literal():
+    res = normalize_instance_identity("('MWM2NzhhOWMzM2Nl',)")
+    assert res["logical_instance_value"] == "MWM2NzhhOWMzM2Nl"
+    assert res["storage_instance_key"] == "MWM2NzhhOWMzM2Nl"
+
+
+def test_instance_id_aliases_include_legacy_tuple_form():
+    assert instance_id_aliases("MWM2NzhhOWMzM2Nl") == [
+        "MWM2NzhhOWMzM2Nl",
+        "('MWM2NzhhOWMzM2Nl',)",
+    ]
+    assert instance_id_aliases("('MWM2NzhhOWMzM2Nl',)") == [
+        "MWM2NzhhOWMzM2Nl",
+        "('MWM2NzhhOWMzM2Nl',)",
+    ]
 
 
 def test_normalize_instance_identity_multi_dim_keeps_full_tuple():

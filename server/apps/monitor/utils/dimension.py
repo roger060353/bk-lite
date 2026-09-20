@@ -182,8 +182,8 @@ def normalize_instance_identity(instance_id: Any) -> dict:
         - raw_input: 原始输入值
         - logical_instance_value: 逻辑实例值（第一维）
         - storage_instance_key: 存储键。
-          单维实例保持为 "('value',)"，
-          多维实例保持完整 tuple 串，如 "('vc-a', 'host-1')"
+          单维实例一律用裸字符串（如 "abc123"），写入时剥掉 "('abc123',)" 这类
+          单元素 tuple/list 字面量；多维实例保持完整 tuple 串，如 "('vc-a', 'host-1')"
 
     Raises:
         ValueError: instance_id 为空或解析失败
@@ -196,12 +196,24 @@ def normalize_instance_identity(instance_id: Any) -> dict:
         raise ValueError(f"invalid instance_id: {instance_id}")
 
     logical_value = str(parsed[0])
-    storage_instance_key = str(parsed) if len(parsed) > 1 else extract_monitor_instance_id(parsed)
+    storage_instance_key = str(parsed) if len(parsed) > 1 else logical_value
     return {
         "raw_input": instance_id,
         "logical_instance_value": logical_value,
         "storage_instance_key": storage_instance_key,
     }
+
+
+def instance_id_aliases(instance_id: Any) -> list[str]:
+    """返回写入优先的存储键，以及单维遗留 tuple 字面量，供读写两边对齐。"""
+    identity = normalize_instance_identity(instance_id)
+    preferred = identity["storage_instance_key"]
+    aliases = [preferred]
+    if len(parse_instance_id(instance_id)) == 1:
+        legacy = str((identity["logical_instance_value"],))
+        if legacy not in aliases:
+            aliases.append(legacy)
+    return aliases
 
 
 def format_dimension_value(

@@ -92,6 +92,30 @@ def test_range_query_uses_server_metric_template_and_authorized_instances(mocker
     )
 
 
+def test_range_query_accepts_legacy_tuple_id_and_filters_with_bare_label(mocker):
+    monitor_object, metric, allowed, _ = _build_metric_contract()
+    service = _service(mocker, allowed)
+    vm_query = mocker.patch(
+        "apps.monitor.services.authorized_metric_query.Metrics.get_metrics_range",
+        return_value={"status": "success", "data": {"result": []}},
+    )
+
+    service.query_range(
+        {
+            "monitor_object_id": monitor_object.id,
+            "metric_id": metric.id,
+            "instance_ids": ["allowed-host", "('allowed-host',)"],
+            "start": 1000,
+            "end": 61000,
+            "step": "60s",
+        }
+    )
+
+    query = vm_query.call_args.args[0]
+    assert 'instance_id=~"allowed\\\\-host"' in query
+    assert "('allowed-host',)" not in query
+
+
 def test_range_query_forwards_gap_detection_and_card_budget(mocker):
     monitor_object, metric, allowed, _ = _build_metric_contract()
     service = _service(mocker, allowed)

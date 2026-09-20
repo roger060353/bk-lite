@@ -78,6 +78,12 @@ class TestCheckMonitorInstance:
         obj = _obj("CMIObj2")
         assert S.check_monitor_instance(obj.id, {"instance_id": "new", "instance_name": "new"}) is None
 
+    def test_existing_bare_id_raises(self):
+        obj = _obj("CMIObjBare")
+        MonitorInstance.objects.create(id="h1", name="h1", monitor_object=obj)
+        with pytest.raises(BaseAppException):
+            S.check_monitor_instance(obj.id, {"instance_id": "('h1',)", "instance_name": "h1"})
+
 
 class TestSetObjectOrder:
     def test_orders_objects_within_type(self):
