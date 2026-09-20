@@ -28,7 +28,7 @@
     {
       "metric_group": "Power",
       "name": "ipmi_power_watts",
-      "query": "ipmi_sensor_value{instance_type='hardware_server', unit=\"watts\", __$labels__}",
+      "query": "ipmi_sensor_value{instance_type='hardware_server', unit=\"watts\", __$labels__} or ipmi_sensor_value{instance_type='hardware_server', name=~\"pwr_consumption|system_power.*|sys_power.*\", __$labels__}",
       "display_name": "Power",
       "data_type": "Number",
       "unit": "watts",
@@ -39,7 +39,7 @@
     {
       "metric_group": "Power",
       "name": "ipmi_voltage_volts",
-      "query": "ipmi_sensor_value{instance_type='hardware_server', unit=\"volts\", __$labels__}",
+      "query": "ipmi_sensor_value{instance_type='hardware_server', unit=\"volts\", __$labels__} or ipmi_sensor_value{instance_type='hardware_server', name=~\"voltage_.*\", __$labels__}",
       "display_name": "Voltage",
       "data_type": "Number",
       "unit": "volts",

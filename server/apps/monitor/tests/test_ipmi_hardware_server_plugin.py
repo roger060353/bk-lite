@@ -71,6 +71,24 @@ def test_manifest_keeps_pre_expansion_metric_set(metrics):
     assert metrics["support_collect_detect"] is True
 
 
+POWER_NAME_ALIASES = "pwr_consumption|system_power.*|sys_power.*"
+VOLTAGE_NAME_ALIASES = "voltage_.*"
+
+
+@pytest.mark.unit
+def test_power_and_voltage_accept_common_sensor_name_aliases(metrics):
+    by_name = {metric["name"]: metric["query"] for metric in metrics["metrics"]}
+    power_query = by_name["ipmi_power_watts"]
+    voltage_query = by_name["ipmi_voltage_volts"]
+
+    assert 'unit="watts"' in power_query
+    assert f'name=~"{POWER_NAME_ALIASES}"' in power_query
+    assert " or " in power_query
+    assert 'unit="volts"' in voltage_query
+    assert f'name=~"{VOLTAGE_NAME_ALIASES}"' in voltage_query
+    assert " or " in voltage_query
+
+
 @pytest.mark.unit
 def test_legacy_metrics_have_translations(metrics, language):
     metric_translations = language["monitor_object_metric"]["Hardware Server"]

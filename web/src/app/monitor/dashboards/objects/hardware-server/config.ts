@@ -19,7 +19,8 @@ export const LINK_ENUM = {
 
 const REDFISH = "instance_type='hardware_server', collect_type='redfish', __$labels__";
 const IPMI_TEMP = 'ipmi_sensor_value{instance_type=\'hardware_server\', unit="degrees_c", __$labels__}';
-const IPMI_WATTS = 'ipmi_sensor_value{instance_type=\'hardware_server\', unit="watts", __$labels__}';
+const IPMI_WATTS =
+  'ipmi_sensor_value{instance_type=\'hardware_server\', unit="watts", __$labels__} or ipmi_sensor_value{instance_type=\'hardware_server\', name=~"pwr_consumption|system_power.*|sys_power.*", __$labels__}';
 const IPMI_RPM = 'ipmi_sensor_value{instance_type=\'hardware_server\', unit="rpm", __$labels__}';
 
 /**
@@ -41,7 +42,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '系统健康',
       description: '整机健康状态。',
       unit: 'none',
-      query: `max by (instance_id) (redfish_system_health{${REDFISH}})`,
+      query: `max by (instance_id) (redfish_system_health_gauge{${REDFISH}})`,
       color: '#27c274'
     },
     {
@@ -49,7 +50,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '电源状态',
       description: '整机电源开/关状态。',
       unit: 'none',
-      query: `max by (instance_id) (redfish_system_power_state{${REDFISH}})`,
+      query: `max by (instance_id) (redfish_system_power_state_gauge{${REDFISH}})`,
       color: '#2f6bff'
     },
     {
@@ -57,7 +58,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: 'BMC 健康',
       description: 'BMC 管理控制器健康。',
       unit: 'none',
-      query: `max by (instance_id) (redfish_manager_health{${REDFISH}})`,
+      query: `max by (instance_id) (redfish_manager_health_gauge{${REDFISH}})`,
       color: '#13c2c2'
     },
     {
@@ -65,7 +66,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '处理器健康',
       description: '全部 CPU 的汇总健康。',
       unit: 'none',
-      query: `max by (instance_id) (redfish_processor_health_rollup{${REDFISH}})`,
+      query: `max by (instance_id) (redfish_processor_health_rollup_gauge{${REDFISH}})`,
       color: '#597ef7'
     },
     {
@@ -73,7 +74,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '内存健康',
       description: '全部内存的汇总健康。',
       unit: 'none',
-      query: `max by (instance_id) (redfish_memory_health_rollup{${REDFISH}})`,
+      query: `max by (instance_id) (redfish_memory_health_rollup_gauge{${REDFISH}})`,
       color: '#8a5cff'
     },
     {
@@ -81,7 +82,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '整机功耗',
       description: '系统当前消耗功率。',
       unit: 'watts',
-      query: `max by (instance_id) (redfish_power_consumed_watts{${REDFISH}} or ${IPMI_WATTS})`,
+      query: `max by (instance_id) (redfish_power_consumed_watts_gauge{${REDFISH}} or ${IPMI_WATTS})`,
       color: '#ff8a1f'
     },
     {
@@ -89,7 +90,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '固件',
       description: 'BMC / BIOS 版本信息。',
       unit: 'none',
-      query: `max by (bmc_firmware, bios_version) (redfish_firmware_info{${REDFISH}})`,
+      query: `max by (bmc_firmware, bios_version) (redfish_firmware_info_gauge{${REDFISH}})`,
       color: '#597ef7'
     },
     {
@@ -97,7 +98,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '温度',
       description: '各温度传感器读数。',
       unit: 'celsius',
-      query: `max by (name) (redfish_temperature_celsius{${REDFISH}} or ${IPMI_TEMP})`,
+      query: `max by (name) (redfish_temperature_celsius_gauge{${REDFISH}} or ${IPMI_TEMP})`,
       color: '#f5222d'
     },
     {
@@ -105,7 +106,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '风扇转速',
       description: '各风扇转速。',
       unit: 'none',
-      query: `max by (name) (redfish_fan_speed{${REDFISH}} or ${IPMI_RPM})`,
+      query: `max by (name) (redfish_fan_speed_gauge{${REDFISH}} or ${IPMI_RPM})`,
       color: '#13c2c2'
     },
     {
@@ -113,7 +114,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '风扇健康',
       description: '各风扇健康状态。',
       unit: 'none',
-      query: `max by (name) (redfish_fan_health{${REDFISH}})`,
+      query: `max by (name) (redfish_fan_health_gauge{${REDFISH}})`,
       color: '#27c274'
     },
     {
@@ -121,7 +122,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '电源健康',
       description: '各电源模块健康。',
       unit: 'none',
-      query: `max by (name) (redfish_psu_health{${REDFISH}})`,
+      query: `max by (name) (redfish_psu_health_gauge{${REDFISH}})`,
       color: '#722ed1'
     },
     {
@@ -129,7 +130,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '电源输入功率',
       description: '各电源模块输入功率。',
       unit: 'watts',
-      query: `max by (name) (redfish_psu_input_watts{${REDFISH}})`,
+      query: `max by (name) (redfish_psu_input_watts_gauge{${REDFISH}})`,
       color: '#ff8a1f'
     },
     {
@@ -137,7 +138,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '电源输入电压',
       description: '各电源模块输入电压。',
       unit: 'volts',
-      query: `max by (name) (redfish_psu_input_voltage{${REDFISH}})`,
+      query: `max by (name) (redfish_psu_input_voltage_gauge{${REDFISH}})`,
       color: '#d48806'
     },
     {
@@ -145,7 +146,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '存储子系统健康',
       description: '存储子系统汇总健康。',
       unit: 'none',
-      query: `max by (id) (redfish_storage_health{${REDFISH}})`,
+      query: `max by (id) (redfish_storage_health_gauge{${REDFISH}})`,
       color: '#2f6bff'
     },
     {
@@ -153,7 +154,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '存储控制器健康',
       description: '存储控制器健康。',
       unit: 'none',
-      query: `max by (id, storage_id) (redfish_storage_controller_health{${REDFISH}})`,
+      query: `max by (id, storage_id) (redfish_storage_controller_health_gauge{${REDFISH}})`,
       color: '#597ef7'
     },
     {
@@ -161,7 +162,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '网口链路',
       description: '网口链路是否连通。',
       unit: 'none',
-      query: `max by (adapter_id, id) (redfish_nic_port_link_up{${REDFISH}})`,
+      query: `max by (adapter_id, id) (redfish_nic_port_link_up_gauge{${REDFISH}})`,
       color: '#27c274'
     },
     {
@@ -169,7 +170,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '网口健康',
       description: '网口健康状态。',
       unit: 'none',
-      query: `max by (adapter_id, id) (redfish_nic_port_health{${REDFISH}})`,
+      query: `max by (adapter_id, id) (redfish_nic_port_health_gauge{${REDFISH}})`,
       color: '#13c2c2'
     },
     {
@@ -177,7 +178,7 @@ export const HARDWARE_SERVER_DASHBOARD_CONFIG: SimpleDashboardConfig = {
       display_name: '网口速率',
       description: '网口当前链路速率。',
       unit: 'none',
-      query: `max by (adapter_id, id) (redfish_nic_port_speed_mbps{${REDFISH}})`,
+      query: `max by (adapter_id, id) (redfish_nic_port_speed_mbps_gauge{${REDFISH}})`,
       color: '#2f6bff'
     }
   ],
