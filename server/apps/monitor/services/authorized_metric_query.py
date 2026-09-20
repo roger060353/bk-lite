@@ -40,6 +40,29 @@ def _storage_instance_id(value) -> str:
         return str(value)
 
 
+def _expand_permission_instance_aliases(permission):
+    """实例级 ACL 的 tuple/clean 主键互认，避免删兄弟行后只剩 clean 却仍按旧 tuple 授权。"""
+    if not isinstance(permission, dict):
+        return permission
+    raw_instances = permission.get("instance") or []
+    if not raw_instances:
+        return permission
+    expanded = []
+    seen = set()
+    for item in raw_instances:
+        if not isinstance(item, dict) or item.get("id") in (None, ""):
+            continue
+        aliases = candidate_instance_ids(item.get("id")) or [str(item["id"])]
+        for alias in aliases:
+            if alias in seen:
+                continue
+            seen.add(alias)
+            expanded.append({**item, "id": alias})
+    next_permission = dict(permission)
+    next_permission["instance"] = expanded
+    return next_permission
+
+
 def _prefer_authorized_instance_id(raw_value, authorized_ids: set, candidates: list[str]) -> str | None:
     """双行并存时优先绑定 clean 主键（CollectConfig/组织只挂在 clean 上）。"""
     try:
@@ -198,12 +221,14 @@ class AuthorizedMetricQueryService:
         if getattr(self.user, "is_superuser", False):
             authorized_qs = MonitorInstance.objects.all()
         else:
-            permission = get_permission_rules(
-                self.user,
-                self.current_team,
-                "monitor",
-                f"{PermissionConstants.INSTANCE_MODULE}.{monitor_object_id}",
-                include_children=self.include_children,
+            permission = _expand_permission_instance_aliases(
+                get_permission_rules(
+                    self.user,
+                    self.current_team,
+                    "monitor",
+                    f"{PermissionConstants.INSTANCE_MODULE}.{monitor_object_id}",
+                    include_children=self.include_children,
+                )
             )
             authorized_qs = permission_filter(
                 MonitorInstance,
