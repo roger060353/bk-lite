@@ -1,0 +1,17 @@
+# OpenIPMI ipmi_sim — Hardware Server IPMI monitor mock
+# 基于 cminyard/openipmi lanserv/lan.conf，去掉 VM/SOL，监听 UDP/623。
+name "ipmisim1"
+
+set_working_mc 0x20
+  startlan 1
+    addr 0.0.0.0 623
+    priv_limit admin
+    allowed_auths_callback none md2 md5 straight
+    allowed_auths_user none md2 md5 straight
+    allowed_auths_operator none md2 md5 straight
+    allowed_auths_admin none md2 md5 straight
+    guid a123456789abcdefa123456789abcdef
+  endlan
+
+  user 1 true  "" "IPMI_PASSWORD" user 10 none md2 md5 straight
+  user 2 true  "FAKESECRET_e4f5g6h7i8j9k0l1m2n3" "IPMI_PASSWORD" admin 10 none md2 md5 straight
