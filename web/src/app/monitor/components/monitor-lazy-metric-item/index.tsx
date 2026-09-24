@@ -46,7 +46,6 @@ const MonitorLazyMetricItem: React.FC<MonitorLazyMetricItemProps> = ({
   isLoaded,
   isCancelled,
   onVisibilityChange,
-  isInViewport,
   resolveUnitLabel,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -184,7 +183,7 @@ const MonitorLazyMetricItem: React.FC<MonitorLazyMetricItemProps> = ({
         ) : (
           <LineChart
             metric={item}
-            data={isInViewport && isLoaded ? ((item.viewData as ChartData[]) || []) : []}
+            data={isLoaded ? ((item.viewData as ChartData[]) || []) : []}
             unit={item.displayUnit}
             onXRangeChange={onXRangeChange}
             resolveUnitLabel={resolveUnitLabelSafe}
