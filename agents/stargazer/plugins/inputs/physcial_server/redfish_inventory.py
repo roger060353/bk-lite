@@ -46,11 +46,37 @@ def _set_self_device(item: Dict[str, Any], ip_addr: Any) -> None:
         item["self_device"] = device
 
 
+_HEALTH_SNAPSHOTS = {
+    "ok": "OK",
+    "warning": "Warning",
+    "critical": "Critical",
+    "unknown": "Unknown",
+}
+
+
+def _health_snapshot(value: Any) -> Optional[str]:
+    text = _non_empty(value)
+    if text is None:
+        return None
+    return _HEALTH_SNAPSHOTS.get(text.lower())
+
+
+def _power_state_snapshot(value: Any) -> Optional[str]:
+    text = _non_empty(value)
+    if text is None:
+        return None
+    if text.lower() == "on":
+        return "On"
+    if text.lower() == "off":
+        return "Off"
+    return text
+
+
 def _status_health(record: Dict[str, Any]) -> Optional[str]:
     status = record.get("Status")
     if not isinstance(status, dict):
         return None
-    return _non_empty(status.get("Health"))
+    return _health_snapshot(status.get("Health"))
 
 
 def _as_int_number(value: Any) -> Optional[int]:
@@ -71,19 +97,39 @@ def _as_int_number(value: Any) -> Optional[int]:
     return None
 
 
-def _speed_mbps(record: Dict[str, Any]) -> Optional[int]:
-    for key in ("CurrentLinkSpeedMbps", "SpeedMbps"):
-        speed = _as_int_number(record.get(key))
-        if speed is not None:
-            return speed
-    gbps = record.get("CurrentSpeedGbps")
-    if isinstance(gbps, bool) or gbps is None:
+def _positive_mbps(value: Any) -> Optional[int]:
+    speed = _as_int_number(value)
+    if speed is None or speed <= 0:
+        return None
+    return speed
+
+
+def _gbps_to_mbps(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or value is None:
         return None
     try:
-        numeric = float(gbps)
+        numeric = float(value)
     except (TypeError, ValueError):
         return None
+    if numeric <= 0:
+        return None
     return int(round(numeric * 1000))
+
+
+def _speed_mbps(record: Dict[str, Any]) -> Optional[int]:
+    """口级速率：优先当前链路，没有再取最大速率。"""
+    for key in ("CurrentLinkSpeedMbps", "CurrentSpeedMbps", "SpeedMbps"):
+        speed = _positive_mbps(record.get(key))
+        if speed is not None:
+            return speed
+    current_gbps = _gbps_to_mbps(record.get("CurrentSpeedGbps"))
+    if current_gbps is not None:
+        return current_gbps
+    for key in ("MaxSpeedMbps", "MaxLinkSpeedMbps"):
+        speed = _positive_mbps(record.get(key))
+        if speed is not None:
+            return speed
+    return _gbps_to_mbps(record.get("MaxSpeedGbps"))
 
 
 def _processor_type(record: Dict[str, Any]) -> str:
@@ -212,10 +258,6 @@ def _extract_nic_mac(record: Dict[str, Any]) -> str:
 
 
 def _nic_iface_name(adapter: Dict[str, Any], function: Dict[str, Any]) -> Optional[str]:
-    ethernet = _as_dict(function.get("Ethernet"))
-    os_name = _non_empty(ethernet.get("HostInterface")) or _non_empty(function.get("HostInterface")) or _non_empty(function.get("InterfaceName"))
-    if os_name:
-        return os_name
     return _non_empty(function.get("Name")) or _non_empty(adapter.get("Name")) or _non_empty(function.get("Id")) or _non_empty(adapter.get("Id"))
 
 
@@ -262,7 +304,7 @@ def _map_storage_controller_items(controllers: List[Dict[str, Any]], ip_addr: st
     for record in controllers:
         if not isinstance(record, dict) or _is_absent(record):
             continue
-        sc_id = _non_empty(record.get("MemberId")) or _non_empty(record.get("Id"))
+        sc_id = _non_empty(record.get("Id")) or _non_empty(record.get("MemberId"))
         if not sc_id or sc_id in seen_ids:
             continue
         seen_ids.add(sc_id)
@@ -321,6 +363,17 @@ def build_redfish_result(
                 mapped_server[key] = stripped
         elif value is not None:
             mapped_server[key] = value
+
+    power_state = _power_state_snapshot(mapped_server.get("power_state"))
+    if power_state is None:
+        mapped_server.pop("power_state", None)
+    else:
+        mapped_server["power_state"] = power_state
+    health = _health_snapshot(mapped_server.get("health"))
+    if health is None:
+        mapped_server.pop("health", None)
+    else:
+        mapped_server["health"] = health
 
     if processors is not None:
         _map_cpu_fields(processors, mapped_server)

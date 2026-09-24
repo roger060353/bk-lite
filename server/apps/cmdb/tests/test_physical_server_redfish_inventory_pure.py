@@ -18,6 +18,14 @@ def protocol_plugin(monkeypatch):
     return PhysicalServerProtocolCollectionPlugin("10.0.0.8", "cmdb_2", 2)
 
 
+def test_redfish_p0_keeps_physical_server_collect_task(protocol_plugin):
+    assert protocol_plugin.supported_model_id == "physcial_server"
+    assert "storage_controller_info_gauge" in protocol_plugin.metric_names
+    assert "psu_info_gauge" in protocol_plugin.metric_names
+    assert "fan_info_gauge" not in protocol_plugin.metric_names
+    assert "psu_input_watts" not in protocol_plugin.related_field_mappings["psu"]
+
+
 def test_redfish_child_gauges_use_ssh_instance_names(protocol_plugin):
     protocol_plugin.collection_metrics_dict["physcial_server_info_gauge"] = [
         {

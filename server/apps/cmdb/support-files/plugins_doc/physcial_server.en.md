@@ -121,15 +121,15 @@ Redfish is the standard REST API provided by a server BMC. This method reads `/r
 | board_vendor | SystemBoard Assembly.Vendor | Motherboard vendor |
 | board_model | SystemBoard Assembly.Model | Motherboard model |
 | board_serial | SystemBoard Assembly.SerialNumber | Motherboard serial number |
-| power_state | ComputerSystem.PowerState | Power state |
-| health | ComputerSystem.Status.Health | System health snapshot |
+| power_state | ComputerSystem.PowerState | Power state. `On`/`Off` are case-normalized; other non-empty values are kept |
+| health | ComputerSystem.Status.Health | Health snapshot. Only `OK`/`Warning`/`Critical`/`Unknown` |
 
 **Related children (attached under the physical server by containment/association)**
 - `memory`: `mem_locator`, `mem_part_number`, `mem_type`, `mem_size` (integer GB), `mem_sn`
-- `disk`: `disk_vendor`, `disk` (integer GB), `disk_type`, `disk_sn`, `health` (`Status.Health`), `disk_life_percent` (`PredictedMediaLifeLeftPercent`)
-- `nic`: `nic_mac`, `nic_vendor`, `nic_model`, `nic_type`, `nic_iface`, `nic_speed_mbps`
+- `disk`: `disk_vendor`, `disk` (integer GB), `disk_type`, `disk_sn`, `health` (`Status.Health`; Absent drives are skipped), `disk_life_percent` (`PredictedMediaLifeLeftPercent`)
+- `nic`: `nic_mac`, `nic_vendor`, `nic_model`, `nic_type`, `nic_iface` (function/adapter `Name` or `Id`), `nic_speed_mbps` (current link speed, otherwise max speed)
 - `gpu`: `gpu_name`, `gpu_type`, `gpu_desc`
-- `storage_controller`: `sc_id`, `sc_name`, `sc_vendor`, `sc_model`, `sc_sn`, `sc_firmware`, `health` (`Storage.StorageControllers`)
+- `storage_controller`: `sc_id` (`Id`, otherwise `MemberId`), `sc_name`, `sc_vendor`, `sc_model`, `sc_sn`, `sc_firmware`, `health` (`Storage.StorageControllers`)
 - `psu`: `psu_name`, `psu_vendor`, `psu_model`, `psu_sn`, `psu_capacity_watts`, `health` (`Power.PowerSupplies`; instantaneous power is not stored)
 
-> Note: child instances attach to the BMC IP; `nic_pci_addr` is omitted; when no OS interface name is present, `nic_iface` uses the adapter or function name; if no SystemBoard is present, `board_*` fields are not written; missing standard fields stay empty; a missing `Power` or `StorageControllers` resource skips that child and the task still succeeds; missing children are not auto-deleted; OEM, EthernetInterfaces, fans, and energy/temperature/voltage/RPM are not collected.
+> Note: child instances attach to the BMC IP; `nic_pci_addr` is omitted; if no SystemBoard is present, `board_*` fields are not written; missing standard fields stay empty; a missing `Power` or `StorageControllers` resource skips that child and the task still succeeds; missing children are not auto-deleted; OEM, EthernetInterfaces, fans, and energy/temperature/voltage/RPM are not collected.

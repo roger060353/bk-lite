@@ -1,4 +1,5 @@
 import asyncio
+import json
 import ssl
 import traceback
 
@@ -751,6 +752,7 @@ async def test_redfish_maps_controllers_psu_and_nic_speed_when_present():
                 "Drives": [{"@odata.id": "/redfish/v1/Chassis/1/Drives/1"}],
                 "StorageControllers": [
                     {
+                        "Id": "RAID.Integrated.1",
                         "MemberId": "0",
                         "Name": "RAID",
                         "Manufacturer": "Broadcom",
@@ -825,7 +827,7 @@ async def test_redfish_maps_controllers_psu_and_nic_speed_when_present():
     assert server["health"] == "Warning"
     assert result["result"]["disk"][0]["disk_life_percent"] == 90
     controller = result["result"]["storage_controller"][0]
-    assert controller["sc_id"] == "0"
+    assert controller["sc_id"] == "RAID.Integrated.1"
     assert controller["sc_firmware"] == "5.1"
     assert controller["self_device"] == "10.0.0.8"
     psu = result["result"]["psu"][0]
@@ -837,3 +839,6 @@ async def test_redfish_maps_controllers_psu_and_nic_speed_when_present():
     assert nic["nic_iface"] == "NIC.Slot.1-1"
     assert nic["nic_speed_mbps"] == 25000
     assert "fan" not in result["result"]
+    flat = json.dumps(result["result"])
+    for forbidden in ("PowerInputWatts", "PowerConsumedWatts", "ReadingVolts", "ReadingCelsius", "PowerOutputWatts"):
+        assert forbidden not in flat
