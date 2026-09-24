@@ -342,3 +342,106 @@ def test_non_dict_members_are_skipped_without_error():
     assert result["disk"] == [{"disk_name": "Disk.0", "self_device": "10.0.0.8"}]
     assert result["nic"] == [{"nic_mac": "aa:bb:cc:dd:ee:01", "nic_type": "Ethernet", "self_device": "10.0.0.8"}]
     assert result["gpu"] == [{"gpu_name": "Acc1", "gpu_type": "Accelerator", "self_device": "10.0.0.8"}]
+
+
+def test_redfish_p0_maps_health_controller_psu_disk_and_nic():
+    result = build_redfish_result(
+        {
+            "ip_addr": "10.0.0.8",
+            "power_state": "On",
+            "health": "OK",
+        },
+        processors=None,
+        memory=None,
+        drives=[
+            {
+                "Id": "Disk.Bay.0",
+                "Status": {"Health": "Warning", "State": "Enabled"},
+                "PredictedMediaLifeLeftPercent": 87.6,
+                "PowerInputWatts": 8,
+            }
+        ],
+        nic_records=[
+            {
+                "adapter": {"Name": "NIC.Slot.1", "Id": "1"},
+                "function": {
+                    "Name": "NIC.Slot.1-1",
+                    "Ethernet": {"MACAddress": "AA-BB-CC-DD-EE-FF"},
+                },
+                "port": {"CurrentSpeedGbps": 25, "CurrentLinkSpeedMbps": 10000},
+            }
+        ],
+        assemblies=None,
+        storage_controllers=[
+            {
+                "MemberId": "0",
+                "Name": "RAID",
+                "Manufacturer": "Broadcom",
+                "Model": "SAS3408",
+                "SerialNumber": "SC-1",
+                "FirmwareVersion": "5.1",
+                "Status": {"Health": "OK"},
+            },
+            {"Name": "name-only"},
+            {"MemberId": "0", "Name": "duplicate"},
+            {"Status": {"State": "Absent"}, "MemberId": "9"},
+        ],
+        power_supplies=[
+            {
+                "Name": "PSU1",
+                "Manufacturer": "Delta",
+                "Model": "DPS-1600",
+                "SerialNumber": "PSU-SN",
+                "PowerCapacityWatts": 1600,
+                "PowerInputWatts": 120,
+                "PowerOutputWatts": 100,
+                "LineInputVoltage": 220,
+                "Status": {"Health": "OK"},
+            },
+            {"Status": {"State": "Absent"}, "Name": "PSU2"},
+        ],
+    )
+
+    assert result["physcial_server"][0]["power_state"] == "On"
+    assert result["physcial_server"][0]["health"] == "OK"
+    assert result["disk"][0]["health"] == "Warning"
+    assert result["disk"][0]["disk_life_percent"] == 88
+    assert "PowerInputWatts" not in result["disk"][0]
+    assert result["nic"][0]["nic_iface"] == "NIC.Slot.1-1"
+    assert result["nic"][0]["nic_speed_mbps"] == 10000
+    assert result["storage_controller"] == [
+        {
+            "sc_id": "0",
+            "sc_name": "RAID",
+            "sc_vendor": "Broadcom",
+            "sc_model": "SAS3408",
+            "sc_sn": "SC-1",
+            "sc_firmware": "5.1",
+            "health": "OK",
+            "self_device": "10.0.0.8",
+        }
+    ]
+    psu = result["psu"][0]
+    assert psu["psu_name"] == "PSU1"
+    assert psu["psu_capacity_watts"] == 1600
+    assert psu["health"] == "OK"
+    assert "PowerInputWatts" not in psu
+    assert "psu_input_watts" not in psu
+    assert len(result["psu"]) == 1
+
+
+def test_missing_controller_and_power_collections_omit_keys():
+    result = build_redfish_result(
+        {"ip_addr": "10.0.0.8", "serial_number": "SERVER-SN-8"},
+        processors=None,
+        memory=None,
+        drives=[{"Id": "Disk.Bay.0"}],
+        nic_records=None,
+        assemblies=None,
+        storage_controllers=None,
+        power_supplies=None,
+    )
+
+    assert set(result) == {"physcial_server", "disk"}
+    assert "power_state" not in result["physcial_server"][0]
+    assert "health" not in result["physcial_server"][0]
