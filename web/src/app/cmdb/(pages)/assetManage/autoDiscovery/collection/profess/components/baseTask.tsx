@@ -1386,7 +1386,7 @@ const BaseTaskForm = forwardRef<BaseTaskRef, BaseTaskFormProps>(
               size="middle"
               loading={instLoading}
               rowKey="inst_uuid"
-              scroll={{ y: '100%' }}
+              scroll={{ y: 'calc(100vh - 280px)' }}
               pagination={{
                 ...instPagination,
                 onChange: (page, pageSize) => {
