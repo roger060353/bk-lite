@@ -56,6 +56,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       "capabilities": [
         "uptime",
         "cpu",
+        "memory",
         "temperature",
         "fan",
         "psu",
@@ -94,6 +95,8 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "cpu",
         "memory",
         "temperature",
+        "fan",
+        "psu",
         "traffic"
       ]
     },
@@ -149,6 +152,16 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_cambium_switch",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "traffic"
+      ]
+    },
+    {
       "collectType": "snmp_cisco",
       "capabilities": [
         "uptime",
@@ -178,6 +191,15 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_dasan",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "traffic"
+      ]
+    },
+    {
       "collectType": "snmp_datacom",
       "capabilities": [
         "uptime",
@@ -192,6 +214,9 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
+        "temperature",
+        "fan",
+        "psu",
         "traffic"
       ]
     },
@@ -224,9 +249,6 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
-        "temperature",
-        "fan",
-        "psu",
         "traffic"
       ]
     },
@@ -629,10 +651,30 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_raisecom_switch",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "traffic"
+      ]
+    },
+    {
       "collectType": "snmp_redlion",
       "capabilities": [
         "uptime",
         "psu",
+        "traffic"
+      ]
+    },
+    {
+      "collectType": "snmp_robustel_switch",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
         "traffic"
       ]
     },
@@ -651,6 +693,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "cpu",
         "memory",
         "temperature",
+        "fan",
         "psu",
         "traffic"
       ]
@@ -730,6 +773,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "memory",
         "temperature",
         "fan",
+        "psu",
         "traffic"
       ]
     },
@@ -771,10 +815,6 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       "collectType": "snmp_westermo",
       "capabilities": [
         "uptime",
-        "cpu",
-        "memory",
-        "temperature",
-        "psu",
         "traffic"
       ]
     },
@@ -830,6 +870,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       "capabilities": [
         "uptime",
         "cpu",
+        "memory",
         "temperature",
         "traffic"
       ]
@@ -858,6 +899,17 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
+        "traffic"
+      ]
+    },
+    {
+      "collectType": "snmp_advantech_router",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "psu",
         "traffic"
       ]
     },
@@ -936,7 +988,6 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
-        "temperature",
         "traffic"
       ]
     },
@@ -1008,6 +1059,8 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       "collectType": "snmp_lancom",
       "capabilities": [
         "uptime",
+        "cpu",
+        "memory",
         "temperature",
         "traffic"
       ]
@@ -1055,7 +1108,26 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_nokia_router",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "traffic"
+      ]
+    },
+    {
       "collectType": "snmp_oneaccess",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "traffic"
+      ]
+    },
+    {
+      "collectType": "snmp_peplink",
       "capabilities": [
         "uptime",
         "cpu",
@@ -1094,6 +1166,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
+        "temperature",
         "traffic"
       ]
     },
@@ -1131,8 +1204,10 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       "collectType": "snmp_viprinet",
       "capabilities": [
         "uptime",
-        "cpu",
         "memory",
+        "temperature",
+        "fan",
+        "psu",
         "traffic"
       ]
     },
@@ -1146,7 +1221,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
-      "collectType": "snmp_yamaha",
+      "collectType": "snmp_yamaha_router",
       "capabilities": [
         "uptime",
         "cpu",
@@ -1208,7 +1283,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
-      "collectType": "snmp_cisco_asa",
+      "collectType": "snmp_cisco_firewall",
       "capabilities": [
         "uptime",
         "cpu",
@@ -1242,7 +1317,11 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
-        "traffic"
+        "temperature",
+        "fan",
+        "psu",
+        "traffic",
+        "session"
       ]
     },
     {
@@ -1266,6 +1345,19 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_h3c_firewall",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "fan",
+        "psu",
+        "traffic",
+        "session"
+      ]
+    },
+    {
       "collectType": "snmp_hillstone",
       "capabilities": [
         "uptime",
@@ -1284,6 +1376,16 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "memory",
         "temperature",
         "psu",
+        "traffic",
+        "session"
+      ]
+    },
+    {
+      "collectType": "snmp_juniper_firewall",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
         "traffic",
         "session"
       ]
@@ -1378,6 +1480,8 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
+        "temperature",
+        "fan",
         "traffic",
         "session"
       ]
@@ -1388,11 +1492,25 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
+        "temperature",
+        "fan",
+        "psu",
         "traffic"
       ]
     },
     {
       "collectType": "snmp_stormshield",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "traffic",
+        "session"
+      ]
+    },
+    {
+      "collectType": "snmp_topsec",
       "capabilities": [
         "uptime",
         "cpu",
@@ -1406,6 +1524,7 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       "capabilities": [
         "uptime",
         "cpu",
+        "memory",
         "traffic",
         "session"
       ]
@@ -1457,6 +1576,16 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_array",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "psu",
+        "traffic"
+      ]
+    },
+    {
       "collectType": "snmp_f5",
       "capabilities": [
         "uptime",
@@ -1500,6 +1629,15 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
       ]
     },
     {
+      "collectType": "snmp_radware",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "traffic"
+      ]
+    },
+    {
       "collectType": "snmp_relianoid",
       "capabilities": [
         "uptime",
@@ -1514,6 +1652,36 @@ export const CAPABILITY_MATRIX: CapabilityMatrix = {
         "uptime",
         "cpu",
         "memory",
+        "traffic"
+      ]
+    }
+  ],
+  "wanopt": [
+    {
+      "collectType": "snmp_bluecoat",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "traffic"
+      ]
+    },
+    {
+      "collectType": "snmp_exinda",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "memory",
+        "temperature",
+        "traffic"
+      ]
+    },
+    {
+      "collectType": "snmp_riverbed",
+      "capabilities": [
+        "uptime",
+        "cpu",
+        "temperature",
         "traffic"
       ]
     }

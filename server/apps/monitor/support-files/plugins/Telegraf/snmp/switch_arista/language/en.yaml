@@ -1,8 +1,6 @@
 Switch Arista SNMP:
   name: Arista (Telegraf)
-  desc: SNMP monitoring template for Arista switch. It reports CPU utilization,
-    memory used and total, temperature, per-port inbound traffic rate, per-port
-    outbound traffic rate, and other key metrics
+  desc: "SNMP monitoring template for Arista switch. It reports uptime, CPU utilization, memory utilization, temperature, fan, power supply status, optical modules, and interface traffic, for EOS data-center switches (based on standard MIBs)."
 monitor_object:
   Switch: Switch
 monitor_object_type:
@@ -21,6 +19,11 @@ monitor_object_metric:
       name: SFP TX Power
       desc: Optical transmit power reading of the SFP/SFP+ module. Abnormal Tx power
         may indicate an aging or failing optical module.
+    device_optical_temperature:
+      name: Optical Module Temperature
+      desc: Temperature of each optical module, in degrees Celsius, from ENTITY-SENSOR
+        celsius sensors whose descr contains DOM. High module temperature accelerates
+        laser aging and can precede optical power failure.
     snmp_uptime:
       name: System Uptime
       desc: This metric indicates the uptime of the device since the last restart.

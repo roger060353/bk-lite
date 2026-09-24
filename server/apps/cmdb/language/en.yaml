@@ -101,7 +101,6 @@ MODEL:
   aliyun_pgsql: Alibaba Cloud PgSQL
   aliyun_redis: Alibaba Cloud Redis
   application: Application
-  biz_group: Business Group
   aws_cf: AWS CloudFront
   aws_docdb: AWS DocumentDB Cluster
   aws_ec2: AWS EC2
@@ -190,6 +189,8 @@ MODEL:
   storage_volume: Storage Volume
   storage_eth_port: Storage Ethernet Port
   storage_fc_port: Storage FC Port
+  storage_controller: Storage Controller
+  psu: Server Power Supply
   hwcloud_evs: Huawei Cloud EVS
   hwcloud_obs: Huawei Cloud OBS
   hwcloud_vpc: Huawei Cloud VPC
@@ -397,9 +398,6 @@ ATTR:
     operator: Main Operator
     bak_operator: Backup Operator
     app_type: Application Type
-  biz_group:
-    inst_name: Group Name
-    organization: Organization
   biz:
     inst_name: Name
     organization: Organization
@@ -1215,6 +1213,8 @@ ATTR:
     board_vendor: Board Vendor
     board_model: Board Model
     board_serial: Board Serial
+    power_state: Power State
+    health: Health
     asset_status: Asset Status
     rack_u_start: Start U
     u_size: U Size
@@ -2581,6 +2581,8 @@ ATTR:
     disk: Hard Disk Information
     disk_type: Disk Type
     disk_sn: Disk Sn
+    health: Health
+    disk_life_percent: Media Life Left (%)
     auto_collect: Auto Collect
     collect_time: Last Updated Time
     collect_task: Collect Task
@@ -2608,6 +2610,7 @@ ATTR:
     nic_model: Nic Model
     nic_iface: Nic Iface
     nic_mac: Nic MAC
+    nic_speed_mbps: Speed (Mbps)
     auto_collect: Auto Collect
     collect_time: Last Updated Time
     collect_task: Collect Task
@@ -2619,6 +2622,35 @@ ATTR:
     gpu_name: GPU
     gpu_type: Gpu Type
     gpu_desc: Gpu Desc
+    auto_collect: Auto Collect
+    collect_time: Last Updated Time
+    collect_task: Collect Task
+  storage_controller:
+    inst_name: Name
+    organization: Organization
+    self_device: Self Device
+    tag: Tag
+    sc_id: Controller ID
+    sc_name: Name
+    sc_vendor: Vendor
+    sc_model: Model
+    sc_sn: Serial Number
+    sc_firmware: Firmware Version
+    health: Health
+    auto_collect: Auto Collect
+    collect_time: Last Updated Time
+    collect_task: Collect Task
+  psu:
+    inst_name: Name
+    organization: Organization
+    self_device: Self Device
+    tag: Tag
+    psu_name: Name
+    psu_vendor: Vendor
+    psu_model: Model
+    psu_sn: Serial Number
+    psu_capacity_watts: Capacity (W)
+    health: Health
     auto_collect: Auto Collect
     collect_time: Last Updated Time
     collect_task: Collect Task

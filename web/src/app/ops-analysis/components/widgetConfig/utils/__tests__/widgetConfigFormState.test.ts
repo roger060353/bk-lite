@@ -41,6 +41,8 @@ describe('getWidgetChartTypeFlags', () => {
       getWidgetChartTypeFlags('', 'application3D').isSceneWidget,
       true,
     );
+    assert.equal(getWidgetChartTypeFlags('room3D').isRoom3D, true);
+    assert.equal(getWidgetChartTypeFlags('room3D').isSceneWidget, true);
     assert.equal(getWidgetChartTypeFlags('line').isSceneWidget, false);
   });
 
@@ -165,6 +167,61 @@ describe('opened widget hydrate', () => {
     assert.equal(formValues.compare, false);
     assert.equal(formValues.compareMode, 'value');
   });
+
+  it('hydrates room3D default from legacy dataSourceParams', () => {
+    const values = buildOpenedWidgetFormValues(
+      {
+        i: 'room',
+        x: 0,
+        y: 0,
+        w: 4,
+        h: 4,
+        name: '3D机房',
+        valueConfig: {
+          chartType: 'room3D',
+          dataSource: 12,
+          dataSourceParams: [
+            {
+              name: 'server_room_id',
+              value: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            },
+          ],
+        },
+      },
+      { showChartThemeMode: false },
+    );
+    assert.deepEqual(values.room3D, {
+      serverRoomId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      rackTopLine1: 'location',
+      rackTopLine2: 'type',
+    });
+    assert.equal(values.sceneWidgetType, undefined);
+  });
+
+  it('hydrates saved rack-top lines into the room3D form', () => {
+    const values = buildOpenedWidgetFormValues(
+      {
+        i: 'room',
+        x: 0,
+        y: 0,
+        w: 4,
+        h: 4,
+        name: '3D机房',
+        valueConfig: {
+          chartType: 'room3D',
+          sceneWidgetType: 'room3D',
+          room3D: {
+            rackTopLine1: 'name',
+            rackTopLine2: '',
+          },
+        },
+      },
+      { showChartThemeMode: false },
+    );
+    assert.deepEqual(values.room3D, {
+      rackTopLine1: 'name',
+    });
+  });
 });
 
 describe('scene open vs selector topology defaults', () => {
@@ -200,6 +257,10 @@ describe('scene open vs selector topology defaults', () => {
     assert.equal(
       resolveOpenedSceneWidgetType({ chartType: 'relatedTopology' }),
       'relatedTopology',
+    );
+    assert.equal(
+      resolveOpenedSceneWidgetType({ chartType: 'room3D' }),
+      'room3D',
     );
   });
 });
@@ -259,6 +320,7 @@ describe('buildDataFetchSignature', () => {
         topNValueField: 'cpu',
         cardListTitleField: undefined,
         networkStatusTopology: undefined,
+        room3D: undefined,
       }),
     );
   });
@@ -288,5 +350,60 @@ describe('mergeNetworkStatusTopologyDraft', () => {
         linkVertices: undefined,
       },
     );
+  });
+});
+
+describe('application3D wall form values', () => {
+  it('hydrates a saved wall config and fills defaults when the field is missing', () => {
+    const saved = buildOpenedWidgetFormValues(
+      {
+        i: 'wall',
+        x: 0,
+        y: 0,
+        w: 4,
+        h: 4,
+        name: '3D应用',
+        valueConfig: {
+          chartType: 'application3D',
+          sceneWidgetType: 'application3D',
+          application3DWall: {
+            pageSize: 36,
+            alarmPagesEnabled: false,
+            alarmPageSize: 12,
+            autoPageEnabled: true,
+            dwellSeconds: 8,
+            pageEffect: 'fade',
+          },
+        },
+      },
+      { showChartThemeMode: false },
+    );
+    assert.equal(saved.application3DWall?.pageSize, 36);
+    assert.equal(saved.application3DWall?.alarmPageSize, 12);
+    assert.equal(saved.application3DWall?.pageEffect, 'fade');
+
+    const missing = buildOpenedWidgetFormValues(
+      {
+        i: 'wall',
+        x: 0,
+        y: 0,
+        w: 4,
+        h: 4,
+        name: '3D应用',
+        valueConfig: {
+          chartType: 'application3D',
+          sceneWidgetType: 'application3D',
+        },
+      },
+      { showChartThemeMode: false },
+    );
+    assert.deepEqual(missing.application3DWall, {
+      pageSize: 24,
+      alarmPagesEnabled: false,
+      alarmPageSize: 24,
+      autoPageEnabled: false,
+      dwellSeconds: 10,
+      pageEffect: 'slide',
+    });
   });
 });

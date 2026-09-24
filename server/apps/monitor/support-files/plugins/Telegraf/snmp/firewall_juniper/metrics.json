@@ -1,0 +1,126 @@
+{
+  "collector": "Telegraf",
+  "collect_type": "snmp_juniper_firewall",
+  "plugin": "Firewall Juniper SNMP",
+  "plugin_desc": "SNMP monitoring template for Juniper SRX firewalls. It reports uptime, CPU utilization, memory utilization, sessions/connections, and interface traffic (enterprise PEN 2636).",
+  "support_collect_detect": true,
+  "status_query": "any({instance_type='firewall', collect_type='snmp_juniper_firewall'}) by (instance_id)",
+  "name": "Firewall",
+  "icon": "mm-firewall_防火墙",
+  "type": "Network Device",
+  "description": "",
+  "default_metric": "any({instance_type='firewall'}) by (instance_id)",
+  "instance_id_keys": [
+    "instance_id"
+  ],
+  "supplementary_indicators": [
+    "snmp_uptime",
+    "device_cpu_usage",
+    "device_memory_usage",
+    "firewall_active_sessions"
+  ],
+  "display_fields": [],
+  "metrics": [
+    {
+      "metric_group": "Base",
+      "name": "snmp_uptime",
+      "query": "sum(snmp_uptime{instance_type='firewall', __$labels__}/100) by (instance_id)",
+      "display_name": "System Uptime",
+      "data_type": "Number",
+      "unit": "s",
+      "dimensions": [],
+      "instance_id_keys": [
+        "instance_id"
+      ],
+      "description": "This metric indicates the uptime of the device since the last restart. By monitoring the uptime, network administrators can understand the stability and reliability of the device and identify potential reboot or failure issues."
+    },
+    {
+      "metric_group": "Firewall",
+      "name": "device_cpu_usage",
+      "query": "device_cpu_usage{instance_type='firewall', __$labels__}",
+      "display_name": "CPU Usage",
+      "data_type": "Number",
+      "unit": "percent",
+      "dimensions": [
+        {
+          "name": "index",
+          "description": "SNMP table row index"
+        },
+        {
+          "name": "node_descr",
+          "description": "SPU node description"
+        }
+      ],
+      "instance_id_keys": [
+        "instance_id"
+      ],
+      "description": "This metric reports the CPU utilization of each Juniper SRX Services Processing Unit (jnxJsSPUMonitoringCPUUsage) as a 0-100 percentage. Dimension index is the SPU monitoring table row; node_descr is the optional SPU node description. Sustained high CPU usage can indicate inspection overload or attack traffic."
+    },
+    {
+      "metric_group": "Firewall",
+      "name": "device_memory_usage",
+      "query": "device_memory_usage{instance_type='firewall', __$labels__}",
+      "display_name": "Memory Usage",
+      "data_type": "Number",
+      "unit": "percent",
+      "dimensions": [
+        {
+          "name": "index",
+          "description": "SNMP table row index"
+        },
+        {
+          "name": "node_descr",
+          "description": "SPU node description"
+        }
+      ],
+      "instance_id_keys": [
+        "instance_id"
+      ],
+      "description": "This metric reports memory utilization of each Juniper SRX Services Processing Unit (jnxJsSPUMonitoringMemoryUsage, a direct percent value). High memory pressure on an SPU can degrade session handling."
+    },
+    {
+      "metric_group": "Firewall",
+      "name": "firewall_active_sessions",
+      "query": "firewall_active_sessions{instance_type='firewall', __$labels__}",
+      "display_name": "Active Sessions",
+      "data_type": "Number",
+      "unit": "short",
+      "dimensions": [
+        {
+          "name": "index",
+          "description": "SNMP table row index"
+        },
+        {
+          "name": "node_descr",
+          "description": "SPU node description"
+        }
+      ],
+      "instance_id_keys": [
+        "instance_id"
+      ],
+      "description": "Number of flow sessions currently tracked by each Juniper SRX SPU (jnxJsSPUMonitoringCurrentFlowSession). A rapid rise can indicate a connection flood or session-table pressure."
+    },
+    {
+      "metric_group": "Firewall",
+      "name": "firewall_max_sessions",
+      "query": "firewall_max_sessions{instance_type='firewall', __$labels__}",
+      "display_name": "Max Sessions",
+      "data_type": "Number",
+      "unit": "short",
+      "dimensions": [
+        {
+          "name": "index",
+          "description": "SNMP table row index"
+        },
+        {
+          "name": "node_descr",
+          "description": "SPU node description"
+        }
+      ],
+      "instance_id_keys": [
+        "instance_id"
+      ],
+      "description": "Maximum flow-session capacity of each Juniper SRX SPU (jnxJsSPUMonitoringMaxFlowSession). Combined with active sessions it gauges remaining session-table headroom."
+    }
+  ]
+}

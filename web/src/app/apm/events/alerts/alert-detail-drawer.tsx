@@ -46,6 +46,7 @@ const ACTION_KEY = {
   escalated: 'apm.alerts.escalated',
   claimed: 'apm.alerts.claimed',
   assigned: 'apm.alerts.assigned',
+  reassigned: 'apm.alerts.reassigned',
   recovered: 'apm.alerts.recover',
   closed: 'apm.alerts.manuallyClosed',
 } as const;
@@ -460,7 +461,7 @@ export default function AlertDetailDrawer({
       };
     });
     lifecycleEvents.forEach((item) => {
-      if (item.action !== 'closed' && item.action !== 'claimed' && item.action !== 'assigned') return;
+      if (item.action !== 'closed' && item.action !== 'claimed' && item.action !== 'assigned' && item.action !== 'reassigned') return;
       if (rows.some((row) => row.eventId === item.event_id)) return;
       rows.push({
         id: item.id,
@@ -679,8 +680,7 @@ export default function AlertDetailDrawer({
                 <div className={styles.alertDetailCloseRow}>
                   <AlertHandlerActions
                     alert={alert}
-                    closeText={t('apm.alerts.closeAlert', '关闭告警')}
-                    closeDanger
+                    closeText={t('apm.common.close', '关闭')}
                     size="middle"
                     onSuccess={onHandlerActionSuccess}
                   />

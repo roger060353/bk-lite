@@ -19,6 +19,8 @@ from apps.system_mgmt.tasks import execute_im_notification_sync_run_task
 from apps.system_mgmt.utils.operation_log_utils import log_operation
 from config.drf.pagination import CustomPageNumberPagination
 
+_IM_CHANNEL_IN_USE_FALLBACK = "This IM notification channel is still used by other business configs and cannot be deleted"
+
 
 class IMNotificationChannelViewSet(MaintainerViewSet):
     latest_sync_run_id = IMNotificationSyncRun.objects.filter(channel_id=OuterRef("channel_id")).order_by("-started_at", "-id").values("id")[:1]
@@ -83,7 +85,8 @@ class IMNotificationChannelViewSet(MaintainerViewSet):
 
         user_group_ids = self._get_user_group_ids(request.user)
         if not user_group_ids:
-            return False, JsonResponse({"result": False, "message": "无权访问该团队数据"}, status=403)
+            message = self.loader.get("error.no_permission_access_team", "无权访问该团队数据") if self.loader else "无权访问该团队数据"
+            return False, JsonResponse({"result": False, "message": message}, status=403)
 
         invalid = set(normalized) - user_group_ids
         if invalid:
@@ -155,11 +158,13 @@ class IMNotificationChannelViewSet(MaintainerViewSet):
                 obj.delete_sync_periodic_task()
                 response = super().destroy(request, *args, **kwargs)
         except ProtectedError:
+            loader = self.loader
+            message = loader.get("error.im_channel_in_use", _IM_CHANNEL_IN_USE_FALLBACK) if loader else _IM_CHANNEL_IN_USE_FALLBACK
             return JsonResponse(
                 {
                     "result": False,
                     "code": "IM_CHANNEL_IN_USE",
-                    "message": "该 IM 通知渠道仍被其他业务使用，无法删除",
+                    "message": message,
                 },
                 status=409,
             )

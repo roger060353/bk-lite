@@ -40,6 +40,10 @@ class SystemMgmt(object):
         """删除某个 bot 名下所有 OpsPilot 托管的 NATS 通道。"""
         return self.client.run("delete_opspilot_nats_channels", bot_id=bot_id)
 
+    def delete_workflow_orchestration_nats_channels(self, workflow_id):
+        """删除某个编排流程名下所有托管 NATS 通道。"""
+        return self.client.run("delete_workflow_orchestration_nats_channels", workflow_id=workflow_id)
+
     def delete_rules(self, group_ids, instance_id, app, module, child_module=""):
         return self.client.run("delete_rules", group_ids, instance_id, app, module, child_module)
 
@@ -141,12 +145,13 @@ class SystemMgmt(object):
         return_data = self.client.run("get_group_users", group=group, include_children=include_children)
         return return_data
 
-    def get_group_users_scoped(self, actor_context, group=None, include_children=False):
+    def get_group_users_scoped(self, actor_context, group=None, include_children=False, search=""):
         return_data = self.client.run(
             "get_group_users_scoped",
             actor_context=actor_context,
             group=group,
             include_children=include_children,
+            search=search,
         )
         return return_data
 
@@ -307,15 +312,18 @@ class SystemMgmt(object):
         include_children=False,
         search="",
         limit=100,
+        recipient_ids=None,
     ):
-        return self.client.run(
-            "search_notification_recipients_scoped",
-            actor_context=actor_context,
-            teams=teams,
-            include_children=include_children,
-            search=search,
-            limit=limit,
-        )
+        kwargs = {
+            "actor_context": actor_context,
+            "teams": teams,
+            "include_children": include_children,
+            "search": search,
+            "limit": limit,
+        }
+        if recipient_ids is not None:
+            kwargs["recipient_ids"] = recipient_ids
+        return self.client.run("search_notification_recipients_scoped", **kwargs)
 
     def dispatch_notification(
         self,
@@ -356,13 +364,6 @@ class SystemMgmt(object):
             capability_only=capability_only,
         )
 
-    def search_groups(self, query_params):
-        """
-        :param query_params: {"search": ""}
-        """
-        return_data = self.client.run("search_groups", query_params=query_params)
-        return return_data
-
     def search_opspilot_nats_channels(self, teams=None, bot_id=None, include_children=False):
         """查询 OpsPilot 托管的 NATS 触发通道（config.source == "opspilot"）。
         :param teams: 可选，组织 ID 列表；为空则跨团队全局列举
@@ -376,12 +377,15 @@ class SystemMgmt(object):
             include_children=include_children,
         )
 
-    def search_users(self, query_params):
-        """
-        :param query_params: {"page_size": 10, "page": 1, "search": ""}
-        """
-        return_data = self.client.run("search_users", query_params=query_params)
-        return return_data
+    def search_workflow_orchestration_nats_channels(self, teams=None, workflow_id=None, include_children=False, active_only=True):
+        """查询编排中心托管的 NATS 触发通道。"""
+        return self.client.run(
+            "search_workflow_orchestration_nats_channels",
+            teams=teams,
+            workflow_id=workflow_id,
+            include_children=include_children,
+            active_only=active_only,
+        )
 
     def send_email_to_receiver(self, title, content, receiver):
         """
@@ -445,6 +449,18 @@ class SystemMgmt(object):
             bot_name=bot_name,
             team=team,
             nodes=nodes,
+            timeout=timeout,
+        )
+
+    def sync_workflow_orchestration_nats_channels(self, workflow_id, workflow_name, team, nodes, active, timeout=60):
+        """对账编排流程的托管 NATS 通道。"""
+        return self.client.run(
+            "sync_workflow_orchestration_nats_channels",
+            workflow_id=workflow_id,
+            workflow_name=workflow_name,
+            team=team,
+            nodes=nodes,
+            active=active,
             timeout=timeout,
         )
 

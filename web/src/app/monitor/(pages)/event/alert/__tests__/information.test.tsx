@@ -27,6 +27,7 @@ vi.mock('@/app/monitor/api', () => ({
     patchMonitorAlert: vi.fn(),
     claimMonitorAlert: vi.fn(),
     assignMonitorAlert: vi.fn(),
+    reassignMonitorAlert: vi.fn(),
     getAllUsers: vi.fn().mockResolvedValue([])
   })
 }));
@@ -37,6 +38,10 @@ vi.mock('@/app/monitor/hooks', () => ({
 
 vi.mock('@/components/permission', () => ({
   default: ({ children }: React.PropsWithChildren) => <>{children}</>
+}));
+
+vi.mock('@/context/userInfo', () => ({
+  useUserInfoContext: () => ({ userId: '7', username: 'testuser' })
 }));
 
 vi.mock('@/utils/i18n', () => ({
@@ -139,6 +144,7 @@ describe('告警详情信息', () => {
     expect(assign.className).toContain('ant-btn-link');
     expect(close.className).toContain('ant-btn-link');
     expect(close.className).not.toContain('ant-btn-dangerous');
+    expect(screen.queryByRole('button', { name: /^转\s*派$/ })).toBeNull();
   });
 
   it('已有处理人的活跃告警不展示认领和分派', () => {
@@ -165,7 +171,33 @@ describe('告警详情信息', () => {
     expect(screen.getByText('Bob(bob)')).not.toBeNull();
     expect(screen.queryByRole('button', { name: /^认\s*领$/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /^分\s*派$/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^转\s*派$/ })).not.toBeNull();
     expect(screen.getByRole('button', { name: /^关\s*闭$/ })).not.toBeNull();
+  });
+
+  it('不是当前处理人时不展示关闭', () => {
+    const formData = {
+      id: 'alert-5',
+      status: 'new',
+      handlers: [8],
+      handlers_display: ['Alice(alice)'],
+      permission: ['Operate', 'Detail'],
+      policy: { notice: false, query_condition: { type: 'metric' } },
+    } as unknown as TableDataItem;
+
+    render(
+      <Information
+        formData={formData}
+        chartData={[]}
+        objects={[]}
+        userList={[]}
+        onClose={vi.fn()}
+        trapData={{}}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /^关\s*闭$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^转\s*派$/ })).toBeNull();
   });
 
   it('does not throw when objects is omitted or empty and falls back to --', () => {

@@ -17,6 +17,7 @@ import {
 import type {
   NetworkStatusTopologyConfig,
   RelatedTopologyConfig,
+  Room3DConfig,
   SceneWidgetType,
 } from '@/app/ops-analysis/types/sceneWidget';
 import {
@@ -25,6 +26,11 @@ import {
 } from '@/app/ops-analysis/utils/cardList';
 import { buildPersistedNetworkStatusTopologyConfig } from '@/app/ops-analysis/utils/networkStatusTopologyLayout';
 import { validateComponentSwitchParams } from '@/app/ops-analysis/utils/componentParamSwitch';
+import { persistRoom3DConfig } from '@/app/ops-analysis/utils/room3DConfig';
+import {
+  resolveApplication3DWallConfig,
+  type Application3DWallConfig,
+} from '@/app/ops-analysis/utils/application3DWallConfig';
 
 export interface WidgetConfigFormValues {
   name: string;
@@ -33,6 +39,8 @@ export interface WidgetConfigFormValues {
   sceneWidgetType?: SceneWidgetType;
   networkStatusTopology?: NetworkStatusTopologyConfig;
   relatedTopology?: RelatedTopologyConfig;
+  room3D?: Room3DConfig;
+  application3DWall?: Application3DWallConfig;
   chartThemeMode?: OpsChartThemeMode;
   dataSource?: string | number;
   compare?: boolean;
@@ -44,6 +52,10 @@ export interface WidgetConfigFormValues {
   descriptionField?: string;
   topNLabelField?: string;
   topNValueField?: string;
+  dimensionField?: string;
+  valueField?: string;
+  multiValueLabelField?: string;
+  multiValueValueField?: string;
   nodeGraphIdentityMode?: 'ip' | 'service';
   nodeGraphSourceField?: string;
   nodeGraphTargetField?: string;
@@ -92,6 +104,8 @@ export type WidgetSubmitError =
   | 'multipleComponentSwitchParams'
   | 'cardListTitleRequired'
   | 'cardListLeadingFieldRequired'
+  | 'chartRoleFieldsRequired'
+  | 'chartRoleFieldPairRequired'
   | 'relatedTopologyInstUuidRequired'
   | 'relatedTopologyModelIdRequired';
 
@@ -147,6 +161,7 @@ const buildSceneWidgetConfig = (
       description: values.description,
       chartType: 'application3D',
       sceneWidgetType: 'application3D',
+      application3DWall: resolveApplication3DWallConfig(values.application3DWall),
       appearance: values.appearance || { frame: 'bare' },
     };
   }
@@ -158,6 +173,16 @@ const buildSceneWidgetConfig = (
       sceneWidgetType: 'relatedTopology',
       relatedTopology: persistRelatedTopologyConfig(values.relatedTopology),
       appearance: values.appearance,
+    };
+  }
+  if (values.sceneWidgetType === 'room3D') {
+    return {
+      name: values.name,
+      description: values.description,
+      chartType: 'room3D',
+      sceneWidgetType: 'room3D',
+      room3D: persistRoom3DConfig(values.room3D),
+      appearance: values.appearance || { frame: 'bare' },
     };
   }
   const topologyConfig = values.networkStatusTopology;
@@ -294,6 +319,10 @@ const CARD_LIST_FOREIGN_KEYS = [
   'descriptionField',
   'topNLabelField',
   'topNValueField',
+  'dimensionField',
+  'valueField',
+  'multiValueLabelField',
+  'multiValueValueField',
   'nodeGraphIdentityMode',
   'nodeGraphSourceField',
   'nodeGraphTargetField',
@@ -560,9 +589,34 @@ export const buildWidgetSubmitConfig = ({
     applyValueFormatFields(result, values);
   }
 
+  if (chartType === 'line' || chartType === 'bar' || chartType === 'pie') {
+    const dimensionField = trimOptionalField(values.dimensionField);
+    const valueField = trimOptionalField(values.valueField);
+    if (Boolean(dimensionField) !== Boolean(valueField) && !forPreview) {
+      return { error: 'chartRoleFieldPairRequired' };
+    }
+    if (dimensionField) {
+      result.dimensionField = dimensionField;
+    }
+    if (valueField) {
+      result.valueField = valueField;
+    }
+  }
+
   if (chartType === 'multiValue') {
     result.thresholdColors = thresholdColors;
     result.valueMappings = values.valueMappings || [];
+    const labelField = trimOptionalField(values.multiValueLabelField);
+    const valueField = trimOptionalField(values.multiValueValueField);
+    if ((!labelField || !valueField) && !forPreview) {
+      return { error: 'chartRoleFieldsRequired' };
+    }
+    if (labelField) {
+      result.multiValueLabelField = labelField;
+    }
+    if (valueField) {
+      result.multiValueValueField = valueField;
+    }
   }
 
   if (chartType === 'topN') {
@@ -582,8 +636,23 @@ export const buildWidgetSubmitConfig = ({
   }
 
   if (chartType === 'eventTimeline') {
+    const timeField = trimOptionalField(values.eventTimeline?.timeField);
+    const titleField = trimOptionalField(values.eventTimeline?.titleField);
+    if ((!timeField || !titleField) && !forPreview) {
+      return { error: 'chartRoleFieldsRequired' };
+    }
+    const descriptionField = trimOptionalField(values.eventTimeline?.descriptionField);
+    const categoryField = trimOptionalField(values.eventTimeline?.categoryField);
+    const statusField = trimOptionalField(values.eventTimeline?.statusField);
+    const linkField = trimOptionalField(values.eventTimeline?.linkField);
     result.eventTimeline = {
       sortOrder: values.eventTimeline?.sortOrder || 'desc',
+      ...(timeField ? { timeField } : {}),
+      ...(titleField ? { titleField } : {}),
+      ...(descriptionField ? { descriptionField } : {}),
+      ...(categoryField ? { categoryField } : {}),
+      ...(statusField ? { statusField } : {}),
+      ...(linkField ? { linkField } : {}),
     };
   }
 
@@ -594,11 +663,18 @@ export const buildWidgetSubmitConfig = ({
         label: String(item.label || '').trim() || undefined,
       }))
       .filter((item) => item.key);
+    const arrayNameField = trimOptionalField(values.radar?.arrayNameField);
+    const arrayValueField = trimOptionalField(values.radar?.arrayValueField);
+    if (indicators.length === 0 && (!arrayNameField || !arrayValueField) && !forPreview) {
+      return { error: 'chartRoleFieldsRequired' };
+    }
 
     result.radar = {
       min: values.radar?.min,
       max: values.radar?.max,
       indicators,
+      ...(arrayNameField ? { arrayNameField } : {}),
+      ...(arrayValueField ? { arrayValueField } : {}),
     };
   }
 

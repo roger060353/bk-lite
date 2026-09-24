@@ -11,6 +11,11 @@ import type {
   SceneWidgetType,
 } from '@/app/ops-analysis/types/sceneWidget';
 import { isSceneWidgetType } from '@/app/ops-analysis/types/sceneWidgetCapability';
+import { resolveApplication3DWallConfig } from '@/app/ops-analysis/utils/application3DWallConfig';
+import {
+  hydrateRoom3DConfig,
+  readPersistedServerRoomId,
+} from '@/app/ops-analysis/utils/room3DConfig';
 import type { OpsAnalysisWidgetSurface } from '@/app/ops-analysis/utils/chartTypeSurface';
 import { canEnableCompare } from '@/app/ops-analysis/utils/compareQuery';
 import {
@@ -42,6 +47,8 @@ export interface WidgetChartTypeFlags {
   isTableLike: boolean;
   isNetworkStatusTopology: boolean;
   isRelatedTopology: boolean;
+  isRoom3D: boolean;
+  isApplication3D: boolean;
   isSceneWidget: boolean;
   showValueFormat: boolean;
 }
@@ -77,6 +84,8 @@ export function getWidgetChartTypeFlags(
       sceneType === 'networkStatusTopology',
     isRelatedTopology:
       chartType === 'relatedTopology' || sceneType === 'relatedTopology',
+    isRoom3D: chartType === 'room3D' || sceneType === 'room3D',
+    isApplication3D: chartType === 'application3D' || sceneType === 'application3D',
     isSceneWidget:
       isSceneWidgetType(chartType) || isSceneWidgetType(sceneType),
     showValueFormat: VALUE_FORMAT_CHART_TYPES.has(chartType),
@@ -107,6 +116,7 @@ export const buildDataFetchSignature = (
         linkTrafficDisplays: config.networkStatusTopology.linkTrafficDisplays,
       }
       : undefined,
+    room3D: config.room3D?.serverRoomId || undefined,
   });
 };
 
@@ -167,6 +177,10 @@ function buildClearedChartDependentFormFields() {
     selectedFields: [] as string[],
     topNLabelField: undefined,
     topNValueField: undefined,
+    dimensionField: undefined,
+    valueField: undefined,
+    multiValueLabelField: undefined,
+    multiValueValueField: undefined,
     nodeGraphIdentityMode: 'ip' as const,
     nodeGraphSourceField: undefined,
     nodeGraphTargetField: undefined,
@@ -222,6 +236,8 @@ export function buildSceneWidgetSelectorResetValues(
       instUuid: undefined,
       modelId: undefined,
     },
+    room3D: hydrateRoom3DConfig({}),
+    application3DWall: resolveApplication3DWallConfig(undefined),
     params: {},
     dataSourceParams: [] as WidgetConfigFormValues['dataSourceParams'],
     tableConfig: undefined,
@@ -247,6 +263,8 @@ export function buildDatasourceSwitchResetValues(options: {
     sceneWidgetType: undefined,
     networkStatusTopology: undefined,
     relatedTopology: undefined,
+    room3D: undefined,
+    application3DWall: undefined,
     params: options.params,
   };
 }
@@ -266,6 +284,11 @@ export function buildOpenedWidgetFormValues(
     sceneWidgetType: valueConfig?.sceneWidgetType,
     networkStatusTopology: valueConfig?.networkStatusTopology,
     relatedTopology: valueConfig?.relatedTopology,
+    room3D: hydrateRoom3DConfig({
+      ...valueConfig?.room3D,
+      serverRoomId: readPersistedServerRoomId(valueConfig),
+    }),
+    application3DWall: resolveApplication3DWallConfig(valueConfig?.application3DWall),
     chartThemeMode: options.showChartThemeMode
       ? valueConfig?.chartThemeMode || 'default'
       : undefined,
@@ -306,6 +329,18 @@ export function applyOpenedValueConfigToFormValues(
   }
   if (valueConfig?.topNValueField !== undefined) {
     formValues.topNValueField = valueConfig.topNValueField;
+  }
+  if (valueConfig?.dimensionField !== undefined) {
+    formValues.dimensionField = valueConfig.dimensionField;
+  }
+  if (valueConfig?.valueField !== undefined) {
+    formValues.valueField = valueConfig.valueField;
+  }
+  if (valueConfig?.multiValueLabelField !== undefined) {
+    formValues.multiValueLabelField = valueConfig.multiValueLabelField;
+  }
+  if (valueConfig?.multiValueValueField !== undefined) {
+    formValues.multiValueValueField = valueConfig.multiValueValueField;
   }
   if (valueConfig?.nodeGraphIdentityMode !== undefined) {
     formValues.nodeGraphIdentityMode = valueConfig.nodeGraphIdentityMode;

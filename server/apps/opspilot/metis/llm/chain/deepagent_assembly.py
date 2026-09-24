@@ -9,6 +9,9 @@ from langchain_core.messages import AIMessage, ToolMessage
 from apps.opspilot.metis.llm.agent.tool_execution_planner import is_pod_restart_reason_query
 from apps.opspilot.metis.llm.chain.entity import HIDE_PLANNED_STEP_TEXT_KEY
 
+# HITL/选择卡会进工具目录，但不算业务工具：无业务工具的寒暄仍走轻量直答。
+_LIGHTWEIGHT_NON_BUSINESS_TOOL_NAMES = frozenset({"request_user_choice"})
+
 
 class DeepAgentAssemblyMixin:
     """Mixin for ToolsNodes; extracted without behavior change."""
@@ -47,9 +50,14 @@ class DeepAgentAssemblyMixin:
         return names
 
     @staticmethod
+    def _catalog_has_business_tools(tools) -> bool:
+        """目录里是否有会打断轻量直答的业务工具。HITL/选择卡不算。"""
+        return any((name := getattr(tool, "name", None)) and name not in _LIGHTWEIGHT_NON_BUSINESS_TOOL_NAMES for tool in (tools or []))
+
+    @staticmethod
     def _should_use_lightweight_direct_reply(tools, skill_sources) -> bool:
         """无业务工具且无技能包时走轻量直答，避免规划器 + DeepAgent 内置工具烧 token。"""
-        if any(getattr(tool, "name", None) for tool in (tools or [])):
+        if DeepAgentAssemblyMixin._catalog_has_business_tools(tools):
             return False
         return not bool(skill_sources)
 
@@ -63,6 +71,8 @@ class DeepAgentAssemblyMixin:
     _STEP_STUB_RE = re.compile(r"^执行结果\s*\d+\s*$")
     _EVIDENCE_NOTE_RE = re.compile(r"日志获取完成|关键证据确认|证据链已闭环|本步证据")
     _INVESTIGATION_DUMP_RE = re.compile(r"事件描述|事件总结|涉及对象清单|异常对象名单|链路分析|数据分析|调查结论|诊断结论")
+    # 最后一步写成「接下来将…」过渡句：正文末尾仍在预告下一步，不算终稿。
+    _TRANSITIONAL_STEP_RE = re.compile(r"(接下来将|接下来我们|下一步将|下一步我们|随后将|下面将|" r"继续排查|继续分析|继续验证|即将排查|即将分析|将进行(排查|分析|验证|查询))")
     _RCA_REQUIRED_HEADINGS = ("事件概述", "异常对象清单", "根因分析", "修复建议")
     _RESTART_REASON_REQUIRED_HEADINGS = ("对象与结论", "证据", "原因")
     HIDE_PLANNED_STEP_TEXT_KEY = HIDE_PLANNED_STEP_TEXT_KEY
@@ -139,6 +149,17 @@ class DeepAgentAssemblyMixin:
         return bool(cls._EVIDENCE_NOTE_RE.search(body))
 
     @classmethod
+    def _looks_like_transitional_step_answer(cls, text: str) -> bool:
+        """最后一步末尾仍在预告「接下来将…」，不是给用户的终稿。"""
+        body = (text or "").strip()
+        if not body:
+            return False
+        if cls._looks_like_complete_rca_report(body) or cls._looks_like_complete_restart_reason_report(body):
+            return False
+        tail = body[-160:] if len(body) > 160 else body
+        return bool(cls._TRANSITIONAL_STEP_RE.search(tail))
+
+    @classmethod
     def _summarize_planned_step_messages(cls, messages) -> str:
         """步间摘要：调查草稿改留工具结果，避免后续步把整份报告再贴一遍。"""
         ai_text = ""
@@ -166,6 +187,8 @@ class DeepAgentAssemblyMixin:
         """步骤已写出给用户看的正文时，跳过总结轮，避免再复述一遍。"""
         for text in reversed(list(cls._iter_planned_assistant_text(messages))):
             if cls._looks_like_evidence_note(text):
+                return False
+            if cls._looks_like_transitional_step_answer(text):
                 return False
             if cls._looks_like_complete_rca_report(text):
                 return True
@@ -404,6 +427,8 @@ class DeepAgentAssemblyMixin:
             "monitor_list_object_instances 的 monitor_obj_id 只能来自 monitor_list_objects；"
             "每个 obj_id 只调用一次，禁止猜测/递增 ID，禁止截断主机名按台循环。"
             "空列表且用户未确认对象类型时，必须 request_user_choice 让用户选择类型，不要当成查无此实例。"
+            "用户已声明主机/Pod/中间件时不要再问类型，直接用对应对象 id。"
+            "查未关闭/未分派/某台还在告时用 alerts_*，不要用 monitor_list_active_alerts，也不要为此问对象类型。"
             "monitor_query_metric_data 的 metric 必须来自本步 monitor_list_object_metrics 返回的 name；"
             "用户问 CPU/内存/磁盘时先 list_object_metrics(keyword=用户词) 筛选再查，禁止猜测 cpu.util，列表非空不要让用户手填指标名。"
             "monitor_query_metric_data 的 instance_ids 必须用 list_object_instances 返回的 instance_id，禁止用 name 或 IP 代替。"
@@ -568,6 +593,7 @@ _select_visible_planned_messages = DeepAgentAssemblyMixin._select_visible_planne
 _set_hide_planned_step_text = DeepAgentAssemblyMixin._set_hide_planned_step_text
 _planned_tool_step_guidance = DeepAgentAssemblyMixin._planned_tool_step_guidance
 _should_use_lightweight_after_empty_plan = DeepAgentAssemblyMixin._should_use_lightweight_after_empty_plan
+_catalog_has_business_tools = DeepAgentAssemblyMixin._catalog_has_business_tools
 _should_use_lightweight_direct_reply = DeepAgentAssemblyMixin._should_use_lightweight_direct_reply
 _skill_only_step_guidance = DeepAgentAssemblyMixin._skill_only_step_guidance
 _skill_package_script_lines = DeepAgentAssemblyMixin._skill_package_script_lines

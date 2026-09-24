@@ -10,7 +10,6 @@ from unittest.mock import Mock
 import pytest
 from django.db import connection
 
-import nats_client
 from apps.core.utils.internal_event_auth import sign_internal_event, verify_internal_event
 from apps.rpc.system_mgmt import SystemMgmt
 from apps.system_mgmt import nats_api
@@ -51,8 +50,6 @@ def test_nats_api_compat_exports_local_and_nats_entrypoints():
         "get_group_users_scoped",
         "get_authorized_groups_scoped",
         "get_all_users",
-        "search_groups",
-        "search_users",
         "init_user_default_attributes",
         "create_guest_role",
         "create_default_rule",
@@ -70,6 +67,10 @@ def test_nats_api_compat_exports_local_and_nats_entrypoints():
         "sync_opspilot_nats_channels",
         "delete_opspilot_nats_channels",
         "search_opspilot_nats_channels",
+        "_list_workflow_orchestration_nats_channels",
+        "sync_workflow_orchestration_nats_channels",
+        "delete_workflow_orchestration_nats_channels",
+        "search_workflow_orchestration_nats_channels",
         "send_email_to_receiver",
         "get_user_rules",
         "get_user_rules_by_module",
@@ -93,6 +94,7 @@ def test_nats_api_compat_exports_local_and_nats_entrypoints():
     }
     local_only_entrypoints = {
         "_list_opspilot_nats_channels",
+        "_list_workflow_orchestration_nats_channels",
         "create_default_rule",
         "bk_lite_user_login",
         "wechat_user_register",
@@ -295,7 +297,7 @@ def test_get_user_menus_with_role_filter():
 
 
 # ---------------------------------------------------------------------------
-# get_group_users / get_all_users / search_*
+# get_group_users / get_all_users
 # ---------------------------------------------------------------------------
 def test_get_group_users_all():
     User.objects.create(username="gu1", password="x", display_name="g1", email="g1@x.com", group_list=[1])
@@ -314,27 +316,22 @@ def test_get_group_users_by_group():
 
 
 def test_get_all_users():
-    User.objects.create(username="allu", password="x", display_name="A", email="a@x.com")
+    user = User.objects.create(
+        username="allu",
+        password="x",
+        display_name="A",
+        email="a@x.com",
+        phone="13800009999",
+        role_list=[1],
+    )
     result = nats_api.get_all_users()
     assert result["result"] is True
-    assert any(u["username"] == "allu" for u in result["data"])
-
-
-def test_search_groups():
-    Group.objects.create(name="FindMeGroup", parent_id=0)
-    Group.objects.create(name="OtherGrp", parent_id=0)
-    result = nats_api.search_groups({"search": "FindMe"})
-    names = {g["name"] for g in result["data"]}
-    assert names == {"FindMeGroup"}
-
-
-def test_search_users_pagination():
-    for i in range(15):
-        User.objects.create(username=f"su{i:02d}", password="x", display_name=f"S{i}", email=f"s{i}@x.com")
-    result = nats_api.search_users({"page": 1, "page_size": 10, "search": "su"})
-    assert result["result"] is True
-    assert result["data"]["count"] >= 15
-    assert len(result["data"]["users"]) == 10
+    returned_user = next(item for item in result["data"] if item["username"] == "allu")
+    assert returned_user == {
+        "id": user.id,
+        "username": "allu",
+        "display_name": "A",
+    }
 
 
 def test_get_group_id():
@@ -450,6 +447,9 @@ def test_get_channel_detail_found_and_missing():
     assert ok["data"]["team"] == [1, 2]
     missing = nats_api.get_channel_detail(999999)
     assert missing["result"] is False
+    assert missing["message"] == "传入的channel_id无法匹配到channel"
+    missing_en = nats_api.get_channel_detail(999999, locale="en")
+    assert missing_en["message"] == "No channel matches the given channel_id"
 
 
 def test_search_channel_list_empty_teams():
@@ -600,10 +600,15 @@ def test_search_channel_list_filters_nats_method_without_exposing_config():
         }
     ]
 
+
 def test_search_channel_list_projects_notify_person_only_for_nats():
     Channel.objects.create(name="nats-enabled", channel_type=ChannelChoices.NATS, config={"supports_notify_person": True}, description="d", team=[8])
-    Channel.objects.create(name="nats-disabled", channel_type=ChannelChoices.NATS, config={"supports_notify_person": "true"}, description="d", team=[8])
-    Channel.objects.create(name="email", channel_type=ChannelChoices.EMAIL, config={"supports_notify_person": True, "secret": "hidden"}, description="d", team=[8])
+    Channel.objects.create(
+        name="nats-disabled", channel_type=ChannelChoices.NATS, config={"supports_notify_person": "true"}, description="d", team=[8]
+    )
+    Channel.objects.create(
+        name="email", channel_type=ChannelChoices.EMAIL, config={"supports_notify_person": True, "secret": "hidden"}, description="d", team=[8]
+    )
 
     result = nats_api.search_channel_list(teams=[8])
 
@@ -718,7 +723,7 @@ def test_probe_notification_channel_capability_only_does_not_touch_responder(
         config={"namespace": "bklite", "method_name": "receive_alert_events"},
         team=[group.id],
     )
-    send = monkeypatch.setattr(
+    monkeypatch.setattr(
         "apps.system_mgmt.nats.channels.send_nats_message",
         lambda *args, **kwargs: pytest.fail("capability-only probe must not call responder"),
     )
@@ -844,9 +849,7 @@ def test_public_notification_dispatch_builds_alert_center_event_copy(monkeypatch
         "pusher": "lite-apm",
         "events": [{"event_key": "event-1", "organizations": [9]}],
     }
-    assert verify_internal_event(
-        "alerts.receive_alert_events", sent["content"], receiver_auth, caller="lite-apm"
-    ) is True
+    assert verify_internal_event("alerts.receive_alert_events", sent["content"], receiver_auth, caller="lite-apm") is True
 
 
 @pytest.mark.parametrize("producer", ["lite-apm", "lite-patch"])
@@ -1089,9 +1092,7 @@ def test_send_msg_with_channel_rejects_unsigned_alert_center_copy(monkeypatch):
     assert result == {"result": True}
     signed_content = send.call_args.args[1]
     receiver_auth = signed_content.pop("internal_auth")
-    assert verify_internal_event(
-        "alerts.receive_alert_events", signed_content, receiver_auth, caller="lite-monitor"
-    ) is True
+    assert verify_internal_event("alerts.receive_alert_events", signed_content, receiver_auth, caller="lite-monitor") is True
 
 
 def test_send_msg_with_channel_legacy_sender_is_accepted_during_rolling_upgrade(monkeypatch):
@@ -1137,16 +1138,12 @@ def test_send_msg_with_channel_rejects_caller_or_channel_organization_mismatch(m
         "receivers": [],
         "attachments": None,
     }
-    wrong_caller = sign_internal_event(
-        "system_mgmt.send_msg_with_channel", request_payload, caller="lite-log"
-    )
+    wrong_caller = sign_internal_event("system_mgmt.send_msg_with_channel", request_payload, caller="lite-log")
     assert nats_api.send_msg_with_channel(channel.id, "", content, [], internal_auth=wrong_caller)["code"] == "internal_auth_required"
 
     forbidden = {**content, "events": [{"organizations": [99]}]}
     forbidden_payload = {**request_payload, "content": forbidden}
-    forbidden_auth = sign_internal_event(
-        "system_mgmt.send_msg_with_channel", forbidden_payload, caller="lite-monitor"
-    )
+    forbidden_auth = sign_internal_event("system_mgmt.send_msg_with_channel", forbidden_payload, caller="lite-monitor")
     assert nats_api.send_msg_with_channel(channel.id, "", forbidden, [], internal_auth=forbidden_auth)["code"] == "channel_forbidden"
     send.assert_not_called()
 

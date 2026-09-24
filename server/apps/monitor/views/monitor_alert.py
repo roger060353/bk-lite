@@ -26,8 +26,10 @@ from apps.monitor.services.alert_handlers import (
     AlertHandlerInvalid,
     assign_alert,
     claim_alert,
+    ensure_manual_close_allowed,
     filter_my_handler_alerts,
     is_my_alert_query,
+    reassign_alert,
 )
 from apps.monitor.serializers.monitor_policy import MonitorPolicySerializer
 from apps.monitor.services.alert_access import visible_monitor_alerts
@@ -289,6 +291,11 @@ class MonitorAlertViewSet(
             serializer.is_valid(raise_exception=True)
             updated_data = serializer.validated_data
             if updated_data.get("status") == "closed":
+                if old_status == "new":
+                    try:
+                        ensure_manual_close_allowed(instance.handlers, request.user)
+                    except AlertHandlerConflict as exc:
+                        return WebUtils.response_error(str(exc), status_code=409)
                 now = datetime.now(timezone.utc)
                 updated_data["end_event_time"] = now
                 updated_data["operator"] = request.user.username
@@ -399,6 +406,30 @@ class MonitorAlertViewSet(
         operable_qs = self.get_visible_alert_queryset(request, require_operate=True)
         try:
             updated = assign_alert(
+                alert,
+                handlers=serializer.validated_data["handlers"],
+                actor=request.user,
+                operable_qs=operable_qs,
+            )
+        except AlertHandlerForbidden as exc:
+            return WebUtils.response_403(str(exc))
+        except AlertHandlerInvalid as exc:
+            return WebUtils.response_error(str(exc), status_code=400)
+        except AlertHandlerConflict as exc:
+            return WebUtils.response_error(str(exc), status_code=409)
+        return self._handler_action_response(updated)
+
+    @action(methods=["post"], detail=True, url_path="reassign")
+    def reassign(self, request, pk=None):
+        alert = self.get_object()
+        auth_error = self._authorize_alert_operate(request, alert)
+        if auth_error:
+            return auth_error
+        serializer = AssignHandlersSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        operable_qs = self.get_visible_alert_queryset(request, require_operate=True)
+        try:
+            updated = reassign_alert(
                 alert,
                 handlers=serializer.validated_data["handlers"],
                 actor=request.user,

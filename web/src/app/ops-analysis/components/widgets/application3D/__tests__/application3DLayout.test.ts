@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   APPLICATION3D_CAMERA_FOV,
+  bindApplication3DTranslate,
   buildApplication3DLayout,
   fitApplication3DCameraDistance,
   fitApplication3DCameraDistanceToWall,
   formatApplication3DCardTitle,
+  formatApplication3DHostCoverage,
   formatApplicationAlarmBadge,
+  formatDegradedText,
   parkedApplication3DWallSize,
   resolveApplication3DBadge,
   resolveApplication3DCardDensity,
@@ -15,6 +18,7 @@ import {
   UNKNOWN_STATUS_BADGE,
   WALL_CAMERA_HEIGHT_FACTOR,
   WALL_VIEW_COVERAGE,
+  type Application3DTranslate,
 } from '../application3DLayout';
 import {
   CARD_GAP,
@@ -277,6 +281,104 @@ describe('application3D layout', () => {
       },
     );
     expect(english.statusLabel).toBe('Critical alarm 1');
+    expect(english.coverageLabel).toBe('');
+  });
+
+  it('shows host coverage on the status row only when monitored is below total', () => {
+    const gap = resolveApplication3DCardVisual({
+      name: '财务结算平台',
+      health: {
+        state: 'alarming',
+        reason: 'active_alarm',
+        activeAlarmCount: 2,
+        highestSeverity: { id: 'critical', label: '严重', color: 'critical' },
+      },
+      hostCoverage: { monitored: 6, total: 9 },
+    });
+    expect(gap.statusLabel).toBe('严重告警 2');
+    expect(gap.coverageLabel).toBe('监控覆盖 6/9');
+    expect(formatApplication3DHostCoverage({ monitored: 6, total: 9 }, (id, fallback, values) => {
+      const map: Record<string, string> = {
+        'dashboard.application3DHostCoverage': 'Monitor coverage {monitored}/{total}',
+      };
+      const template = map[id] ?? fallback ?? id;
+      if (!values) return template;
+      return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`));
+    })).toBe('Monitor coverage 6/9');
+    const dropped: { current: Application3DTranslate } = {
+      current: (id, fallback) => fallback ?? id,
+    };
+    expect(
+      formatApplication3DHostCoverage({ monitored: 6, total: 9 }, bindApplication3DTranslate(dropped)),
+    ).toBe('监控覆盖 {monitored}/{total}');
+    dropped.current = (id, fallback, values) => {
+      const template = fallback ?? id;
+      if (!values) return template;
+      return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`));
+    };
+    expect(
+      formatApplication3DHostCoverage({ monitored: 6, total: 9 }, bindApplication3DTranslate(dropped)),
+    ).toBe('监控覆盖 6/9');
+
+    const complete = resolveApplication3DCardVisual({
+      name: '财务结算平台',
+      health: {
+        state: 'normal',
+        reason: 'no_active_alarm',
+        activeAlarmCount: 0,
+        highestSeverity: { id: 'normal', label: '正常', color: 'success' },
+      },
+      hostCoverage: { monitored: 9, total: 9 },
+    });
+    expect(complete.statusLabel).toBe('运行正常');
+    expect(complete.coverageLabel).toBe('');
+
+    const empty = resolveApplication3DCardVisual({
+      name: '空系统',
+      health: {
+        state: 'unknown',
+        reason: 'no_host',
+        activeAlarmCount: null,
+        highestSeverity: null,
+      },
+    });
+    expect(empty.coverageLabel).toBe('');
+    expect(formatDegradedText('')).toBe(UNKNOWN_STATUS_BADGE);
+    expect(formatDegradedText('CPU')).toBe('CPU');
+
+    const fillCalls: Array<{ text: string; x: number; y: number }> = [];
+    const ctx = {
+      canvas: { width: 512, height: 640 },
+      clearRect: () => undefined,
+      save: () => undefined,
+      restore: () => undefined,
+      beginPath: () => undefined,
+      moveTo: () => undefined,
+      lineTo: () => undefined,
+      arcTo: () => undefined,
+      closePath: () => undefined,
+      clip: () => undefined,
+      fill: () => undefined,
+      stroke: () => undefined,
+      fillRect: () => undefined,
+      fillText: (text: string, x: number, y: number) => {
+        fillCalls.push({ text, x, y });
+      },
+      measureText: (text: string) => ({ width: text.length * 18 }),
+      arc: () => undefined,
+      createRadialGradient: () => ({ addColorStop: () => undefined }),
+      createLinearGradient: () => ({ addColorStop: () => undefined }),
+    } as unknown as CanvasRenderingContext2D;
+    paintApplication3DCard(ctx, gap, 'finance', 'front');
+    const status = fillCalls.find((call) => call.text === '严重告警 2');
+    const coverage = fillCalls.find((call) => call.text === '监控覆盖 6/9');
+    expect(status).toBeTruthy();
+    expect(coverage).toBeTruthy();
+    expect(coverage?.y).toBe(status?.y);
+    expect(coverage?.x ?? 0).toBeGreaterThan(status?.x ?? 0);
+    const badge = badgeRect('6/9', 512, 640);
+    expect(coverage?.y).not.toBe(badge.centerY + 1);
+    expect(coverage?.x).not.toBe(badge.centerX);
   });
 
   it('uses a landscape card matching the HUD mock', () => {
@@ -285,6 +387,29 @@ describe('application3D layout', () => {
     expect(ratio).toBeCloseTo(CARD_WORLD_WIDTH / CARD_WORLD_HEIGHT, 5);
     expect(ratio).toBeGreaterThan(1);
     expect(layout.gapX / layout.cardWidth).toBeCloseTo(CARD_GAP / CARD_WORLD_WIDTH, 5);
+  });
+
+  it('pulls the parked camera back when a ≤16 wall is wider than 4 columns', () => {
+    const viewportAspect = 1.84;
+    const layout = buildApplication3DLayout(15, viewportAspect);
+    const parkedDistance = fitApplication3DCameraDistance(viewportAspect);
+    const fitted = fitApplication3DCameraDistanceToWall(
+      layout.wallWidth,
+      layout.wallHeight,
+      viewportAspect,
+    );
+    expect(layout.columns).toBe(5);
+    expect(layout.rows).toBe(3);
+    expect(layout.cardWidth).toBe(CARD_WORLD_WIDTH);
+
+    const camera = resolveApplication3DWallCamera(15, viewportAspect);
+    expect(fitted).toBeGreaterThan(parkedDistance);
+    expect(camera.z).toBeCloseTo(fitted, 8);
+    expect(camera.y).toBeCloseTo(layout.wallHeight * WALL_CAMERA_HEIGHT_FACTOR, 8);
+
+    const twelve = resolveApplication3DWallCamera(12, viewportAspect);
+    expect(twelve.z).toBeCloseTo(parkedDistance, 8);
+    expect(resolveApplication3DWallCamera(16, viewportAspect).z).toBeCloseTo(parkedDistance, 8);
   });
 
   it('keeps one card density and one parked camera for every ≤16 wall', () => {
@@ -365,52 +490,50 @@ describe('application3D layout', () => {
     expect(seventeenCam.y).toBeCloseTo(parked.wallHeight * WALL_CAMERA_HEIGHT_FACTOR, 8);
   });
 
-  it('pulls the camera back to the actual wall past 24 cards without shrinking them', () => {
+  it('keeps 17–36 on the 24-card camera and a 6-column grid', () => {
     const viewportAspect = 1.84;
     const twentyFour = buildApplication3DLayout(24, viewportAspect);
     const twentyFive = buildApplication3DLayout(25, viewportAspect);
+    const thirtyTwo = buildApplication3DLayout(32, viewportAspect);
+    const thirtySix = buildApplication3DLayout(36, viewportAspect);
+    expect(twentyFive.columns).toBeLessThanOrEqual(6);
+    expect(thirtyTwo.columns).toBe(6);
+    expect(thirtyTwo.columns).not.toBe(8);
+    expect(thirtySix.columns).toBe(6);
+    expect(thirtySix.rows).toBe(6);
+    expect(twentyFive.cardWidth).toBe(twentyFour.cardWidth);
+    expect(thirtySix.cardWidth).toBe(twentyFour.cardWidth);
+
+    const twentyFourCam = resolveApplication3DWallCamera(24, viewportAspect);
+    const twentyFiveCam = resolveApplication3DWallCamera(25, viewportAspect);
+    const thirtySixCam = resolveApplication3DWallCamera(36, viewportAspect);
+    expect(twentyFiveCam).toEqual(twentyFourCam);
+    expect(thirtySixCam).toEqual(twentyFourCam);
+  });
+
+  it('pulls the camera back to the actual wall past 36 cards without shrinking them', () => {
+    const viewportAspect = 1.84;
+    const twentyFour = buildApplication3DLayout(24, viewportAspect);
     const fortyEight = buildApplication3DLayout(48, viewportAspect);
     const eighty = buildApplication3DLayout(80, viewportAspect);
     const twoHundred = buildApplication3DLayout(200, viewportAspect);
-    expect(resolveApplication3DCardDensity(25)).toBe(0.82);
     expect(resolveApplication3DCardDensity(48)).toBe(0.82);
     expect(resolveApplication3DCardDensity(80)).toBe(0.82);
     expect(resolveApplication3DCardDensity(200)).toBe(0.82);
-    expect(twentyFive.cardWidth).toBe(twentyFour.cardWidth);
     expect(fortyEight.cardWidth).toBe(twentyFour.cardWidth);
     expect(eighty.cardWidth).toBe(twentyFour.cardWidth);
     expect(twoHundred.cardWidth).toBe(twentyFour.cardWidth);
 
-    const parked = parkedApplication3DWallSize();
-    const parkedDistance = fitApplication3DCameraDistance(viewportAspect);
     const twentyFourCam = resolveApplication3DWallCamera(24, viewportAspect);
-    const twentyFiveCam = resolveApplication3DWallCamera(25, viewportAspect);
     const fortyEightCam = resolveApplication3DWallCamera(48, viewportAspect);
     const eightyCam = resolveApplication3DWallCamera(80, viewportAspect);
-    const fitted25 = fitApplication3DCameraDistanceToWall(
-      twentyFive.wallWidth,
-      twentyFive.wallHeight,
-      viewportAspect,
-    );
     const fitted48 = fitApplication3DCameraDistanceToWall(
       fortyEight.wallWidth,
       fortyEight.wallHeight,
       viewportAspect,
     );
 
-    expect(twentyFiveCam.z).toBeGreaterThanOrEqual(twentyFourCam.z);
-    expect(twentyFiveCam.z).toBeCloseTo(Math.max(fitted25, twentyFourCam.z), 8);
-    expect(twentyFiveCam.z).not.toBeCloseTo(parkedDistance / 0.64, 4);
-    expect(twentyFiveCam.y).toBeCloseTo(
-      twentyFive.wallHeight * WALL_CAMERA_HEIGHT_FACTOR,
-      8,
-    );
-    expect(twentyFiveCam.y).not.toBeCloseTo(
-      parked.wallHeight * WALL_CAMERA_HEIGHT_FACTOR,
-      4,
-    );
-
-    expect(fortyEightCam.z).toBeGreaterThan(twentyFiveCam.z);
+    expect(fortyEightCam.z).toBeGreaterThan(twentyFourCam.z);
     expect(fortyEightCam.z).toBeCloseTo(fitted48, 8);
     expect(eightyCam.z).toBeGreaterThan(fortyEightCam.z);
     expect(fortyEightCam.y).toBeCloseTo(
