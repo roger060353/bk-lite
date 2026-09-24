@@ -43,7 +43,6 @@ const LazyMetricItem: React.FC<LazyMetricItemProps> = ({
   isLoaded,
   isCancelled,
   onVisibilityChange,
-  isInViewport,
   xAxisDomain
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -184,7 +183,7 @@ const LazyMetricItem: React.FC<LazyMetricItemProps> = ({
             <LineChart
               metric={item}
               data={
-                isInViewport && isLoaded
+                isLoaded
                   ? (item.viewData as ChartData[]) || []
                   : []
               }
