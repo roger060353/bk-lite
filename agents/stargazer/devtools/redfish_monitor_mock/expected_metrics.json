@@ -1,0 +1,401 @@
+{
+  "plugin": "Hardware Server Redfish",
+  "collect_type": "redfish",
+  "metrics": [
+    "redfish_system_health",
+    "redfish_system_power_state",
+    "redfish_manager_health",
+    "redfish_processor_health_rollup",
+    "redfish_memory_health_rollup",
+    "redfish_temperature_celsius",
+    "redfish_inlet_temperature_celsius",
+    "redfish_inlet_temperature_upper_critical_celsius",
+    "redfish_fan_speed",
+    "redfish_power_consumed_watts",
+    "redfish_psu_health",
+    "redfish_psu_input_watts",
+    "redfish_psu_output_watts",
+    "redfish_psu_capacity_watts",
+    "redfish_psu_delivering",
+    "redfish_psu_redundant",
+    "redfish_power_limit_watts",
+    "redfish_power_over_limit",
+    "redfish_firmware_info",
+    "redfish_temperature_upper_critical_celsius",
+    "redfish_fan_health",
+    "redfish_psu_input_voltage",
+    "redfish_voltage_volts",
+    "redfish_storage_health",
+    "redfish_drive_health",
+    "redfish_drive_present_count",
+    "redfish_drive_life_percent",
+    "redfish_storage_controller_health",
+    "redfish_nic_health",
+    "redfish_nic_port_health",
+    "redfish_nic_port_link_up",
+    "redfish_nic_port_speed_mbps"
+  ],
+  "checklist": [
+    {
+      "name": "redfish_system_health",
+      "value": 1,
+      "labels": {},
+      "group": "Health"
+    },
+    {
+      "name": "redfish_system_power_state",
+      "value": 1,
+      "labels": {},
+      "group": "Health"
+    },
+    {
+      "name": "redfish_manager_health",
+      "value": 1,
+      "labels": {},
+      "group": "Health"
+    },
+    {
+      "name": "redfish_processor_health_rollup",
+      "value": 1,
+      "labels": {},
+      "group": "Health"
+    },
+    {
+      "name": "redfish_memory_health_rollup",
+      "value": 1,
+      "labels": {},
+      "group": "Health"
+    },
+    {
+      "name": "redfish_firmware_info",
+      "value": 1,
+      "labels": {
+        "bios_version": "2.18.1",
+        "bmc_firmware": "7.00.00"
+      },
+      "group": "Inventory"
+    },
+    {
+      "name": "redfish_temperature_celsius",
+      "value": 45,
+      "labels": {
+        "name": "CPU1 Temp"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_temperature_celsius",
+      "value": 22,
+      "labels": {
+        "name": "System Board Inlet Temp"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_temperature_celsius",
+      "value": 33,
+      "labels": {
+        "name": "System Board Exhaust Temp"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_temperature_upper_critical_celsius",
+      "value": 98,
+      "labels": {
+        "name": "CPU1 Temp"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_temperature_upper_critical_celsius",
+      "value": 47,
+      "labels": {
+        "name": "System Board Inlet Temp"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_temperature_upper_critical_celsius",
+      "value": 80,
+      "labels": {
+        "name": "System Board Exhaust Temp"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_inlet_temperature_celsius",
+      "value": 22,
+      "labels": {},
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_inlet_temperature_upper_critical_celsius",
+      "value": 47,
+      "labels": {},
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_fan_speed",
+      "value": 4200,
+      "labels": {
+        "name": "Fan1",
+        "unit": "RPM"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_fan_speed",
+      "value": 3900,
+      "labels": {
+        "name": "Fan2",
+        "unit": "RPM"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_fan_health",
+      "value": 1,
+      "labels": {
+        "name": "Fan1"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_fan_health",
+      "value": 1,
+      "labels": {
+        "name": "Fan2"
+      },
+      "group": "Environment"
+    },
+    {
+      "name": "redfish_power_consumed_watts",
+      "value": 280,
+      "labels": {
+        "name": "System Power Control"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_power_limit_watts",
+      "value": 750,
+      "labels": {
+        "name": "System Power Control"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_power_over_limit",
+      "value": 0,
+      "labels": {},
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_health",
+      "value": 1,
+      "labels": {
+        "name": "PS1 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_health",
+      "value": 1,
+      "labels": {
+        "name": "PS2 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_input_watts",
+      "value": 160,
+      "labels": {
+        "name": "PS1 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_input_watts",
+      "value": 145,
+      "labels": {
+        "name": "PS2 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_output_watts",
+      "value": 148,
+      "labels": {
+        "name": "PS1 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_output_watts",
+      "value": 132,
+      "labels": {
+        "name": "PS2 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_capacity_watts",
+      "value": 750,
+      "labels": {
+        "name": "PS1 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_capacity_watts",
+      "value": 750,
+      "labels": {
+        "name": "PS2 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_input_voltage",
+      "value": 220,
+      "labels": {
+        "name": "PS1 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_input_voltage",
+      "value": 220,
+      "labels": {
+        "name": "PS2 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_delivering",
+      "value": 1,
+      "labels": {
+        "name": "PS1 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_delivering",
+      "value": 1,
+      "labels": {
+        "name": "PS2 Status"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_psu_redundant",
+      "value": 1,
+      "labels": {},
+      "group": "Power"
+    },
+    {
+      "name": "redfish_voltage_volts",
+      "value": 12.1,
+      "labels": {
+        "name": "System Board 12V"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_voltage_volts",
+      "value": 3.31,
+      "labels": {
+        "name": "System Board 3.3V"
+      },
+      "group": "Power"
+    },
+    {
+      "name": "redfish_storage_health",
+      "value": 1,
+      "labels": {
+        "id": "RAID.Integrated.1-1"
+      },
+      "group": "Storage"
+    },
+    {
+      "name": "redfish_storage_controller_health",
+      "value": 1,
+      "labels": {
+        "id": "RAID.Integrated.1-1",
+        "storage_id": "RAID.Integrated.1-1"
+      },
+      "group": "Storage"
+    },
+    {
+      "name": "redfish_drive_health",
+      "value": 1,
+      "labels": {
+        "name": "Physical Disk 0:1:0",
+        "media_type": "HDD",
+        "protocol": "SAS"
+      },
+      "group": "Storage"
+    },
+    {
+      "name": "redfish_drive_health",
+      "value": 2,
+      "labels": {
+        "name": "SSD 0",
+        "media_type": "SSD",
+        "protocol": "SATA"
+      },
+      "group": "Storage"
+    },
+    {
+      "name": "redfish_drive_present_count",
+      "value": 2,
+      "labels": {},
+      "group": "Storage"
+    },
+    {
+      "name": "redfish_drive_life_percent",
+      "value": 86,
+      "labels": {
+        "name": "SSD 0",
+        "media_type": "SSD",
+        "protocol": "SATA"
+      },
+      "group": "Storage"
+    },
+    {
+      "name": "redfish_nic_health",
+      "value": 1,
+      "labels": {
+        "id": "NIC.Integrated.1"
+      },
+      "group": "Network"
+    },
+    {
+      "name": "redfish_nic_port_health",
+      "value": 1,
+      "labels": {
+        "adapter_id": "NIC.Integrated.1",
+        "id": "1"
+      },
+      "group": "Network"
+    },
+    {
+      "name": "redfish_nic_port_link_up",
+      "value": 1,
+      "labels": {
+        "adapter_id": "NIC.Integrated.1",
+        "id": "1"
+      },
+      "group": "Network"
+    },
+    {
+      "name": "redfish_nic_port_speed_mbps",
+      "value": 25000,
+      "labels": {
+        "adapter_id": "NIC.Integrated.1",
+        "id": "1"
+      },
+      "group": "Network"
+    }
+  ]
+}
