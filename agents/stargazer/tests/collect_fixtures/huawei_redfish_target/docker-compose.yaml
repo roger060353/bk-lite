@@ -1,0 +1,37 @@
+# OPS-ONLY：华为 iBMC 风格 Redfish 合成目标，给 Stargazer 在 bklite-prod 上联调。
+# 不是一套并行 BK-Lite 栈，也不加入产品启动脚本 / Supervisor / batch_init。
+#
+# 产品栈仍用现场已有 compose：
+#   /opt/bk-lite/deploy/docker-compose       # 单机
+#   /opt/bk-lite/deploy/docker-compose-ha    # HA
+# 本文件只提供一个可从 bklite-prod 访问的 HTTPS Redfish 替身。
+# 若 bklite-prod 不存在，说明 BK-Lite 尚未启动或当前 Docker 主机不对；
+# 不要手动新建该网络来替代。
+#
+# 用法见同目录 README.md。
+
+services:
+  huawei-redfish-target:
+    build:
+      context: .
+      network: host
+    image: huawei-redfish-target:qa
+    container_name: huawei-redfish-target
+    hostname: huawei-redfish-target
+    ports:
+      - "18443:443"
+    environment:
+      REDFISH_MOCK_USERNAME: mock-reader
+      REDFISH_MOCK_PASSWORD: mock-redfish-pw
+      REDFISH_MOCK_BIND: "0.0.0.0"
+      REDFISH_MOCK_PORT: "443"
+      REDFISH_MOCK_PROFILE: x86
+      REDFISH_MOCK_SCENARIO: healthy
+    networks:
+      - bklite-prod
+    restart: unless-stopped
+
+networks:
+  bklite-prod:
+    external: true
+    name: bklite-prod

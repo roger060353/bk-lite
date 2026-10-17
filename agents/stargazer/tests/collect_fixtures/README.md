@@ -173,3 +173,16 @@ QA 若要 Docker 模拟真实 SSH 采集两次、核对 nic 数量不变，用�
 - 服务：`physcial-server-ssh-target`
 - 用户 / 密码：`root` / `testpw`（与本 README 的 SSH fixture 相同）
 - 宿主机端口：`12226`；接到产品栈网络后容器内端口：`22`
+
+## 物理服务器 Redfish 采集（Japan CMDB E2E / bklite-prod）
+
+本机 `huawei_redfish_target` CLI 默认只监听 `127.0.0.1`，`bklite-prod` 上的 Stargazer 到不了。现场联调用：
+
+`agents/stargazer/tests/collect_fixtures/huawei_redfish_target/README.md`
+
+- compose：`huawei_redfish_target/docker-compose.yaml`（加入外部网络 `bklite-prod`）
+- 服务：`huawei-redfish-target`，容器内 `0.0.0.0:443`
+- 用户 / 密码：`mock-reader` / `mock-redfish-pw`
+- 任务入口：`physcial_server_redfish`；BMC 必须填容器在 `bklite-prod` 上的 IP，不能填主机名
+- `verify_tls`：关闭
+- 成功标记：`brand=Huawei`，`model=2288H V5 (synthetic)`，`serial_number=MOCK-X86-SERVER-001`

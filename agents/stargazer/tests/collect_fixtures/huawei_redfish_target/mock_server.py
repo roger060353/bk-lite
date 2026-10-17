@@ -21,7 +21,7 @@ MAX_BODY = 4096
 class MockServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, port, username, password, profile="x86", scenario="healthy", tls_context=None):
+    def __init__(self, port, username, password, profile="x86", scenario="healthy", tls_context=None, bind="127.0.0.1"):
         if not username or not password:
             raise ValueError("mock credentials must be provided through environment variables")
         self.resources = build_inventory(profile, scenario)
@@ -31,7 +31,8 @@ class MockServer(ThreadingHTTPServer):
         self.session_lock = threading.Lock()
         self.workers = threading.BoundedSemaphore(8)
         self.tls_context = tls_context
-        super().__init__(("127.0.0.1", port), Handler)
+        self.bind = bind
+        super().__init__((bind, port), Handler)
 
     def get_request(self):
         connection, address = super().get_request()
@@ -198,6 +199,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18443)
+    parser.add_argument("--bind", default="127.0.0.1", help="监听地址；容器内需 0.0.0.0，本机默认环回")
     parser.add_argument("--profile", choices=PROFILES, default="x86")
     parser.add_argument("--scenario", choices=SCENARIOS, default="healthy")
     parser.add_argument("--cert")
@@ -216,9 +218,9 @@ def main():
     user, password = os.getenv("REDFISH_MOCK_USERNAME", ""), os.getenv("REDFISH_MOCK_PASSWORD", "")
     if not user or not password:
         parser.error("set REDFISH_MOCK_USERNAME and REDFISH_MOCK_PASSWORD")
-    with MockServer(args.port, user, password, args.profile, args.scenario, context) as server:
+    with MockServer(args.port, user, password, args.profile, args.scenario, context, bind=args.bind) as server:
         print(
-            f"Synthetic Redfish: {'http' if args.http else 'https'}://127.0.0.1:{server.server_port}/redfish/v1/ "
+            f"Synthetic Redfish: {'http' if args.http else 'https'}://{args.bind}:{server.server_port}/redfish/v1/ "
             f"profile={args.profile} scenario={args.scenario}",
             flush=True,
         )
