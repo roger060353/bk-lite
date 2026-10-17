@@ -1,0 +1,42 @@
+#
+ version 7.1.070, Release 7757P03
+#
+ sysname MOCK-H3C
+#
+ clock timezone Beijing add 08:00:00
+#
+ telnet server enable
+ ssh server enable
+#
+vlan 1
+#
+vlan 10
+ description MOCK-MGMT
+#
+interface NULL0
+#
+interface Vlan-interface1
+ ip address 192.168.1.10 255.255.255.0
+#
+interface GigabitEthernet1/0/1
+ port link-mode bridge
+ port access vlan 10
+ description MOCK-ACCESS
+#
+interface GigabitEthernet1/0/24
+ port link-mode route
+ description MOCK-UPLINK
+#
+ ip route-static 0.0.0.0 0.0.0.0 192.168.1.1
+#
+local-user admin class manage
+ password hash $1$MOCK$ComwareHashNotASecret
+ service-type ssh
+ authorization-attribute user-role level-15
+#
+user-interface vty 0 4
+ authentication-mode scheme
+ protocol inbound ssh
+ idle-timeout 10 0
+#
+return

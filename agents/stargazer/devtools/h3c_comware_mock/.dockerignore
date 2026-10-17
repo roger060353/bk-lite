@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.pytest_cache
+README.md
+probe.py
+smoke.py

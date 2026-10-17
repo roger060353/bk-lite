@@ -1,0 +1,24 @@
+# OPS ONLY / Japan CMDB E2E. Do not promote this service into product master compose.
+name: h3c-comware-mock
+
+services:
+  h3c-comware-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: h3c-comware-mock:ops
+    container_name: h3c-comware-mock
+    hostname: mock-h3c
+    ports:
+      - "2223:22"
+    networks:
+      - bklite-prod
+    restart: unless-stopped
+    labels:
+      bklite.ops-only: "true"
+      bklite.do-not-merge: "true"
+
+networks:
+  bklite-prod:
+    name: bklite-prod
+    external: true
