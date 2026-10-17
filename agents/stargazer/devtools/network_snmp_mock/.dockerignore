@@ -1,0 +1,5 @@
+README.md
+smoke.py
+__pycache__
+*.pyc
+.git
