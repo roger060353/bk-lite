@@ -1,0 +1,59 @@
+# OPS-ONLY：Hardware Server 监控 mock（IPMI + Redfish）。
+# 加入现场已有外部网络 bklite-prod，不要另起一套 BK-Lite 栈。
+# 用法见 ipmi_monitor_mock/README.md 与 redfish_monitor_mock/README.md。
+#
+#   cd agents/stargazer/devtools
+#   docker compose -f docker-compose.monitor-bmc-mocks.yml up -d --build
+
+name: monitor-bmc-mocks
+
+services:
+  ipmi-monitor-mock:
+    build:
+      context: ./ipmi_monitor_mock
+    image: bklite/ipmi-monitor-mock:ops
+    container_name: ipmi-monitor-mock
+    hostname: ipmi-monitor-mock
+    restart: unless-stopped
+    environment:
+      IPMI_USERNAME: admin
+      IPMI_PASSWORD: IpmiMon1
+    ports:
+      - "623:623/udp"
+    networks:
+      - bklite-prod
+    mem_limit: 192m
+    cpus: 0.50
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /var/lib/ipmi_sim:size=8m
+    security_opt:
+      - no-new-privileges:true
+
+  redfish-monitor-mock:
+    build:
+      context: ./redfish_monitor_mock
+    image: bklite/redfish-monitor-mock:ops
+    container_name: redfish-monitor-mock
+    hostname: redfish-monitor-mock
+    restart: unless-stopped
+    environment:
+      REDFISH_USERNAME: redfish
+      REDFISH_PASSWORD: RedfishMon1
+    ports:
+      - "8443:443"
+    networks:
+      - bklite-prod
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  bklite-prod:
+    external: true
