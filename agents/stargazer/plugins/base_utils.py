@@ -4,6 +4,7 @@
 # @Author: windyzhao
 import datetime
 import ipaddress
+import json
 import time
 
 import pytz
@@ -35,12 +36,12 @@ def convert_to_prometheus_format(data):
         return str(value)
 
     def label_value(key, value):
-        # tag 在采集侧是 list[str]，Prometheus 标签只能是字符串，逗号分隔后由 CMDB coerce 还原。
+        # tag 是 list[str]。Prometheus 标签只能是字符串，用 JSON 数组保留 value 里的逗号。
         if key == "tag" and isinstance(value, list) and all(isinstance(item, str) for item in value):
-            joined = ",".join(item.strip() for item in value if item.strip())
-            if not joined:
+            items = [item.strip() for item in value if item.strip()]
+            if not items:
                 return None
-            return escape_value(joined)
+            return escape_value(json.dumps(items, ensure_ascii=False))
         if value is None or value == "" or isinstance(value, (list, dict)):
             return None
         return escape_value(value)

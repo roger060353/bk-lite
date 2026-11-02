@@ -149,6 +149,7 @@ def test_coerce_collected_tag_parses_csv_and_list_without_clearing_blank():
     assert Management.coerce_collected_tag({"tag": ["test:aaa"]})["tag"] == ["test:aaa"]
     assert "tag" not in Management.coerce_collected_tag({"tag": ""})
     assert Management.coerce_collected_tag({"tag": "env:prod,team:net"})["tag"] == ["env:prod", "team:net"]
+    assert Management.coerce_collected_tag({"tag": '["owner:acme,inc","env:prod"]'})["tag"] == ["owner:acme,inc", "env:prod"]
 
 
 def test_coerce_collected_tag_skips_illegal_and_truncates_without_leaking_values(caplog):

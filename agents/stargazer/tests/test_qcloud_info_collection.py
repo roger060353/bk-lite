@@ -681,16 +681,41 @@ def test_qcloud_bucket_tagging_replaces_present_tags_and_skips_api_errors():
     assert sentinel not in str([record.args for record in records])
 
 
-def test_prometheus_exports_tag_list_as_comma_separated_label():
+def _prometheus_label(line, name):
+    """按 Prometheus 文本转义还原一个标签值。"""
+    import re
+
+    match = re.search(rf'{name}="((?:\\.|[^"\\])*)"', line)
+    assert match, line
+    raw = match.group(1)
+    chars = []
+    index = 0
+    while index < len(raw):
+        if raw[index] == "\\" and index + 1 < len(raw):
+            escaped = raw[index + 1]
+            chars.append({"n": "\n", "\\": "\\", '"': '"'}.get(escaped, escaped))
+            index += 2
+            continue
+        chars.append(raw[index])
+        index += 1
+    return "".join(chars)
+
+
+def test_prometheus_tag_list_round_trips_value_containing_comma():
+    import json
+
     from plugins.base_utils import convert_to_prometheus_format
 
+    tags = ["owner:acme,inc", "env:prod"]
     text = convert_to_prometheus_format(
         {
-            "qcloud_cvm": [{"resource_id": "ins-1", "resource_name": "cvm", "tag": ["env:prod", "team:net"]}],
+            "qcloud_cvm": [{"resource_id": "ins-1", "resource_name": "cvm", "tag": tags}],
             "qcloud_nat_gateway": [{"resource_id": "nat-1", "resource_name": "nat", "tag": []}],
         }
     )
-    assert 'tag="env:prod,team:net"' in text
+    cvm_line = next(line for line in text.splitlines() if "ins-1" in line)
+    assert json.loads(_prometheus_label(cvm_line, "tag")) == tags
+    assert "owner:acme,inc,env:prod" not in cvm_line
     nat_line = next(line for line in text.splitlines() if "nat-1" in line)
     assert "tag=" not in nat_line
 

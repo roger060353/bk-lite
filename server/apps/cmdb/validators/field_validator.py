@@ -166,6 +166,21 @@ def validate_tag_values(values: list[str], config: TagFieldConfig) -> TagValidat
     return TagValidationResult(normalized_values=normalized_values, errors=errors)
 
 
+def parse_collected_tag_wire(value: Any) -> list[str]:
+    """采集链路里的 tag：JSON 数组原样还原，旧的逗号分隔字符串仍然可用。"""
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return normalize_tag_input_values(parsed)
+        return normalize_tag_input_values(raw)
+    return normalize_tag_input_values(value)
+
+
 def normalize_tag_input_values(value: Any) -> list[str]:
     if value is None or value == "":
         return []

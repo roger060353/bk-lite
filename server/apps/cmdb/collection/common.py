@@ -8,7 +8,7 @@ from apps.cmdb.constants.field_constraints import TAG_ATTR_ID
 from apps.cmdb.graph.drivers.graph_client import GraphClient
 from apps.cmdb.services.instance_identity import prepare_new_instance_identity
 from apps.cmdb.services.model import ModelManage
-from apps.cmdb.validators.field_validator import normalize_tag_input_values, sanitize_collected_tag_values
+from apps.cmdb.validators.field_validator import parse_collected_tag_wire, sanitize_collected_tag_values
 from apps.core.exceptions.base_app_exception import BaseAppException
 from apps.core.logger import cmdb_logger as logger
 
@@ -110,7 +110,7 @@ class Management:
             cleaned = dict(instance_info)
             cleaned.pop(TAG_ATTR_ID, None)
             return cleaned
-        raw_values = normalize_tag_input_values(value)
+        raw_values = parse_collected_tag_wire(value)
         legal, skipped, truncated = sanitize_collected_tag_values(raw_values)
         if skipped or truncated:
             logger.warning(
