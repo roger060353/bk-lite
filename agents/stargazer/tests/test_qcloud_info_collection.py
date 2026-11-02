@@ -709,13 +709,19 @@ def test_prometheus_tag_list_round_trips_value_containing_comma():
     tags = ["owner:acme,inc", "env:prod"]
     text = convert_to_prometheus_format(
         {
-            "qcloud_cvm": [{"resource_id": "ins-1", "resource_name": "cvm", "tag": tags}],
+            "qcloud_cvm": [
+                {"resource_id": "ins-1", "resource_name": "cvm", "tag": tags},
+                {"resource_id": "ins-2", "resource_name": "cvm", "tag": ["env:prod", "team:net"]},
+            ],
             "qcloud_nat_gateway": [{"resource_id": "nat-1", "resource_name": "nat", "tag": []}],
         }
     )
     cvm_line = next(line for line in text.splitlines() if "ins-1" in line)
     assert json.loads(_prometheus_label(cvm_line, "tag")) == tags
     assert "owner:acme,inc,env:prod" not in cvm_line
+    plain_line = next(line for line in text.splitlines() if "ins-2" in line)
+    assert 'tag="env:prod,team:net"' not in plain_line
+    assert json.loads(_prometheus_label(plain_line, "tag")) == ["env:prod", "team:net"]
     nat_line = next(line for line in text.splitlines() if "nat-1" in line)
     assert "tag=" not in nat_line
 
