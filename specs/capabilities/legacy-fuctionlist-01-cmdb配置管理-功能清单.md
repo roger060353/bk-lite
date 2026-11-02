@@ -1087,7 +1087,7 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `filter_type` | 过滤类型 |
 | `qps` | 每秒查询数 |
 
-#### 腾讯云 COS 存储桶（模型 `qcloud_bucket` · 5 字段）
+#### 腾讯云 COS 存储桶（模型 `qcloud_bucket` · 6 字段）
 
 | 字段标识 | 中文含义 |
 |---|---|
@@ -1096,8 +1096,9 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `resource_name` | 云资源名称 |
 | `resource_id` | 云资源唯一 ID |
 | `region` | 地域 |
+| `tag` | 标签 |
 
-#### 腾讯云 CVM 云服务器（模型 `qcloud_cvm` · 15 字段）
+#### 腾讯云 CVM 云服务器（模型 `qcloud_cvm` · 16 字段）
 
 | 字段标识 | 中文含义 |
 |---|---|
@@ -1116,6 +1117,7 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `vcpus` | 虚拟 CPU 数 |
 | `memory_mb` | 内存大小（MB） |
 | `charge_type` | 计费方式 |
+| `tag` | 标签 |
 
 #### 腾讯云 MongoDB（模型 `qcloud_mongodb` · 23 字段）
 
@@ -1145,7 +1147,7 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `mongos_node_num` | mongos 节点数 |
 | `charge_type` | 计费方式 |
 
-#### 腾讯云 MySQL（模型 `qcloud_mysql` · 11 字段）
+#### 腾讯云 MySQL（模型 `qcloud_mysql` · 12 字段）
 
 | 字段标识 | 中文含义 |
 |---|---|
@@ -1160,6 +1162,7 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `volume` | 卷/容量 |
 | `memory_mb` | 内存大小（MB） |
 | `charge_type` | 计费方式 |
+| `tag` | 标签 |
 
 #### 腾讯云 PostgreSQL（模型 `qcloud_pgsql` · 19 字段）
 
@@ -1208,7 +1211,7 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `max_delay_s` | 最大延迟（秒） |
 | `charge_type` | 计费方式 |
 
-#### 腾讯云 Redis（模型 `qcloud_redis` · 22 字段）
+#### 腾讯云 Redis（模型 `qcloud_redis` · 23 字段）
 
 | 字段标识 | 中文含义 |
 |---|---|
@@ -1234,8 +1237,9 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `client_limit` | 客户端连接上限 |
 | `net_limit` | 网络带宽上限 |
 | `charge_type` | 计费方式 |
+| `tag` | 标签 |
 
-#### 腾讯云 RocketMQ（模型 `qcloud_rocketmq` · 14 字段）
+#### 腾讯云 RocketMQ（模型 `qcloud_rocketmq` · 15 字段）
 
 | 字段标识 | 中文含义 |
 |---|---|
@@ -1253,8 +1257,9 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `used_name_space_num` | 已用命名空间数 |
 | `group_num` | 消费组数 |
 | `used_group_num` | 已用消费组数 |
+| `tag` | 标签 |
 
-#### 腾讯云域名（模型 `qcloud_domain` · 7 字段）
+#### 腾讯云域名（模型 `qcloud_domain` · 8 字段）
 
 | 字段标识 | 中文含义 |
 |---|---|
@@ -1265,6 +1270,7 @@ CMDB 通过 NATS handler 对外暴露 25 个函数（原 15 个，本轮新增 1
 | `tld` | 顶级域名 |
 | `status` | 运行状态 |
 | `expired_time` | 到期时间 |
+| `tag` | 标签 |
 
 #### 腾讯云弹性公网 IP（模型 `qcloud_eip` · 13 字段）
 

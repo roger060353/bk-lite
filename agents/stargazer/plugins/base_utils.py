@@ -34,6 +34,17 @@ def convert_to_prometheus_format(data):
             return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
         return str(value)
 
+    def label_value(key, value):
+        # tag 在采集侧是 list[str]，Prometheus 标签只能是字符串，逗号分隔后由 CMDB coerce 还原。
+        if key == "tag" and isinstance(value, list) and all(isinstance(item, str) for item in value):
+            joined = ",".join(item.strip() for item in value if item.strip())
+            if not joined:
+                return None
+            return escape_value(joined)
+        if value is None or value == "" or isinstance(value, (list, dict)):
+            return None
+        return escape_value(value)
+
     # 用于存放所有指标，结构为{metric_name: [line, line, ...]}
     metrics = {}
 
@@ -45,7 +56,11 @@ def convert_to_prometheus_format(data):
                 if item is None:
                     continue
             # 构造标签字典：过滤掉列表和字典类型，并且值不为None
-            labels = {k: escape_value(v) for k, v in item.items() if v is not None and v != "" and not isinstance(v, (list, dict))}
+            labels = {}
+            for key, value in item.items():
+                rendered = label_value(key, value)
+                if rendered is not None:
+                    labels[key] = rendered
             labels["model_id"] = model_id
             # 按键排序生成标签字符串
             label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
